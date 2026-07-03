@@ -2,6 +2,28 @@
 // init(). Loaded last — every other frontend module is already parsed
 // when init() runs (see index.html for the full script order).
 
+// ── GLOBAL ERROR SURFACING ────────────────────────────────────────────────────
+// Without this, a bug anywhere in the app (a thrown error, a rejected
+// promise nobody awaited) failed silently — nothing but a console line the
+// user never sees, leaving them stuck on a dead view with no explanation.
+// This only makes failures visible locally; no data leaves the device (no
+// tracking, per project privacy policy).
+let _lastGlobalErrorToastAt = 0;
+function _surfaceUnexpectedError() {
+  const now = Date.now();
+  if (now - _lastGlobalErrorToastAt < 4000) return; // one toast per burst
+  _lastGlobalErrorToastAt = now;
+  toast(tr('common.actionFailed'), 'error');
+}
+window.addEventListener('error', (event) => {
+  console.error('Unhandled error:', event.error || event.message);
+  _surfaceUnexpectedError();
+});
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('Unhandled promise rejection:', event.reason);
+  _surfaceUnexpectedError();
+});
+
 // ── AUTH BOOTSTRAP ────────────────────────────────────────────────────────────
 function _showAuthView(id) {
   // 'login' | 'setup' | 'forcePw' | null (none = app shell)
@@ -37,6 +59,15 @@ async function submitLogin() {
   const username = document.getElementById('loginUsername').value.trim();
   const password = document.getElementById('loginPassword').value;
   const remember = document.getElementById('loginRemember').checked;
+  // Login needs the server: the password is verified server-side and the
+  // session cookie is issued by the backend — there is deliberately no
+  // offline credential cache (the service worker even refuses to queue
+  // login attempts). When there's no connection, say so plainly instead
+  // of letting the request fail into a misleading "bad credentials".
+  if (navigator.onLine === false) {
+    _setAuthError('loginError', tr('auth.offline'));
+    return;
+  }
   const btn = document.getElementById('loginSubmit');
   if (btn) btn.disabled = true;
   try {
@@ -55,16 +86,27 @@ async function submitLogin() {
       );
       return;
     }
+    if (res.status === 503) {
+      // The service worker's offline fallback (or an unreachable backend
+      // on "lie-fi", where navigator.onLine still reports online). A login
+      // is never queued, so this is a connection problem, not a wrong
+      // password.
+      _setAuthError('loginError', tr('auth.offline'));
+      return;
+    }
     if (!res.ok) {
       _setAuthError('loginError', tr('auth.badCredentials'));
       return;
     }
     const data = await res.json();
     window._csrfToken = data.user.csrf_token;
-    _broadcastCsrfToSw(window._csrfToken);
+    _propagateCsrfToken(window._csrfToken);
     await _afterAuthSuccess(data.user);
   } catch (e) {
-    _setAuthError('loginError', tr('common.connectionFailed'));
+    _setAuthError(
+      'loginError',
+      navigator.onLine === false ? tr('auth.offline') : tr('common.connectionFailed'),
+    );
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -190,6 +232,7 @@ async function _afterAuthSuccess(me) {
   await loadAndRender();
   showPanel(loadDefaultView());
   updateSyncBadge();
+  updateFailedNotice();
   reconcileSettingsFromServer();
   // Toast the "N transactions auto-added" notice once per session if
   // the backend just materialized due recurring occurrences. The
@@ -223,6 +266,24 @@ function onI18nChanged() {
   if (appState.nav.activePanel === 'recurring') renderRecurringView();
 }
 
+// Auth bootstrap fetches (setup-status, me) gate which view init() unhides,
+// so they must never hang. On a weak signal a plain fetch neither resolves
+// nor rejects for tens of seconds, leaving every view hidden — a white
+// screen. Abort after BOOTSTRAP_TIMEOUT_MS so a slow link falls through to
+// the login view (same outcome as the existing "backend unreachable" catch)
+// instead of stalling. A working-but-slow link still has a few seconds to
+// answer before we give up.
+const BOOTSTRAP_TIMEOUT_MS = 5000;
+
+function _bootstrapFetch(path) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), BOOTSTRAP_TIMEOUT_MS);
+  return fetch(API + path, {
+    credentials: 'same-origin',
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timer));
+}
+
 // ── INIT ──────────────────────────────────────────────────────────────────────
 async function init() {
   // Wait for the i18n bundle so the first render is already in the
@@ -244,6 +305,19 @@ async function init() {
   syncDisplaySelects();
   applyRange({ skipRender: true });
   if ('serviceWorker' in navigator) {
+    // Auto-reload once when a new service worker takes control. The shell HTML
+    // is network-first, so after an upgrade the page can boot fresh markup
+    // while still running the previous version's cached JS/i18n until a reload
+    // — exactly the half-updated state that breaks newly added reports/keys.
+    // Guarded against the first-ever install (no prior controller; the new
+    // SW's clients.claim() fires controllerchange there too) and reload loops.
+    let _swReloading = false;
+    const _hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (_swReloading || !_hadController) return;
+      _swReloading = true;
+      window.location.reload();
+    });
     try {
       await navigator.serviceWorker.register('/sw.js');
     } catch (e) {
@@ -256,9 +330,7 @@ async function init() {
   let suggested = null;
   let defaultLocale = null;
   try {
-    const res = await fetch(API + '/auth/setup-status', {
-      credentials: 'same-origin',
-    });
+    const res = await _bootstrapFetch('/auth/setup-status');
     if (res.ok) {
       const data = await res.json();
       needsSetup = !!data.needs_setup;
@@ -301,9 +373,7 @@ async function init() {
   window._suppressAuthReload = true;
   let me = null;
   try {
-    const res = await fetch(API + '/auth/me', {
-      credentials: 'same-origin',
-    });
+    const res = await _bootstrapFetch('/auth/me');
     if (res.ok) me = await res.json();
   } catch (e) {}
   window._suppressAuthReload = false;
@@ -314,7 +384,7 @@ async function init() {
     return;
   }
   window._csrfToken = me.csrf_token;
-  _broadcastCsrfToSw(window._csrfToken);
+  _propagateCsrfToken(window._csrfToken);
   await _afterAuthSuccess(me);
 }
 init();

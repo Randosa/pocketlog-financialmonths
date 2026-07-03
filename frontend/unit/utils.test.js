@@ -374,10 +374,7 @@ describe('_importReport', () => {
   it('reports not-ok when nothing was imported', () => {
     const r = _importReport({ imported: 0, skipped: 1, deduped: 0, errors: [] });
     expect(r.ok).toBe(false);
-    expect(r.summary.map((s) => s.key)).toEqual([
-      'importExport.imported',
-      'importExport.skipped',
-    ]);
+    expect(r.summary.map((s) => s.key)).toEqual(['importExport.imported', 'importExport.skipped']);
   });
 
   it('caps the row errors and counts the overflow', () => {
@@ -387,5 +384,160 @@ describe('_importReport', () => {
     expect(r.rowErrors).toHaveLength(10);
     expect(r.rowErrors[0]).toEqual({ row: 2, code: 'row_invalid', params: {} });
     expect(r.moreErrors).toBe(2);
+  });
+});
+
+describe('_parseServerDate', () => {
+  const { _parseServerDate } = utils;
+
+  it('treats zone-less backend timestamps as UTC', () => {
+    const d = _parseServerDate('2026-07-02T05:22:50');
+    expect(d.getTime()).toBe(Date.UTC(2026, 6, 2, 5, 22, 50));
+  });
+
+  it('leaves explicit zones untouched', () => {
+    expect(_parseServerDate('2026-07-02T05:22:50Z').getTime()).toBe(
+      Date.UTC(2026, 6, 2, 5, 22, 50),
+    );
+    expect(_parseServerDate('2026-07-02T07:22:50+02:00').getTime()).toBe(
+      Date.UTC(2026, 6, 2, 5, 22, 50),
+    );
+  });
+
+  it('returns an invalid date for empty input', () => {
+    expect(Number.isNaN(_parseServerDate('').getTime())).toBe(true);
+    expect(Number.isNaN(_parseServerDate(null).getTime())).toBe(true);
+  });
+});
+
+describe('_deviceLabelFromUA', () => {
+  const { _deviceLabelFromUA } = utils;
+
+  it('labels common desktop browsers', () => {
+    expect(
+      _deviceLabelFromUA(
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+      ),
+    ).toBe('Chrome · Windows');
+    expect(
+      _deviceLabelFromUA(
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
+      ),
+    ).toBe('Safari · macOS');
+    expect(
+      _deviceLabelFromUA('Mozilla/5.0 (X11; Linux x86_64; rv:127.0) Gecko/20100101 Firefox/127.0'),
+    ).toBe('Firefox · Linux');
+  });
+
+  it('recognises iOS WebKit browsers by vendor token before Safari', () => {
+    expect(
+      _deviceLabelFromUA(
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/126.0.0.0 Mobile/15E148 Safari/604.1',
+      ),
+    ).toBe('Chrome · iOS');
+    expect(
+      _deviceLabelFromUA(
+        'Mozilla/5.0 (iPad; CPU OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+      ),
+    ).toBe('Safari · iPadOS');
+  });
+
+  it('labels Edge on Windows via the Edg token', () => {
+    expect(
+      _deviceLabelFromUA(
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0',
+      ),
+    ).toBe('Edge · Windows');
+  });
+
+  it('falls back to empty for unknown agents', () => {
+    expect(_deviceLabelFromUA('curl/8.5.0')).toBe('');
+    expect(_deviceLabelFromUA(null)).toBe('');
+    expect(_deviceLabelFromUA('')).toBe('');
+  });
+});
+
+describe('_failedEntrySummary', () => {
+  const { _failedEntrySummary } = utils;
+
+  it('classifies a transaction create with content fields', () => {
+    const s = _failedEntrySummary({
+      method: 'POST',
+      path: '/transactions',
+      body: { desc: 'Edeka', amount: '12.34', date: '2026-07-01', category_id: 3 },
+      status: 400,
+      detail: '{"detail":"unknown_category"}',
+    });
+    expect(s).toEqual({
+      entity: 'transaction',
+      verb: 'create',
+      label: 'Edeka',
+      amount: '12.34',
+      date: '2026-07-01',
+      code: 'unknown_category',
+      status: 400,
+    });
+  });
+
+  it('maps methods to verbs and paths to entities', () => {
+    expect(_failedEntrySummary({ method: 'PUT', path: '/transactions/9', body: {} }).verb).toBe(
+      'update',
+    );
+    expect(_failedEntrySummary({ method: 'DELETE', path: '/goals/2', body: null }).entity).toBe(
+      'goal',
+    );
+    expect(_failedEntrySummary({ method: 'POST', path: '/recurring', body: { name: 'Miete' } })).toMatchObject(
+      { entity: 'recurring', label: 'Miete' },
+    );
+    expect(_failedEntrySummary({ method: 'POST', path: '/budgets', body: {} }).entity).toBe(
+      'budget',
+    );
+    expect(_failedEntrySummary({ method: 'PUT', path: '/settings', body: {} }).entity).toBe(
+      'settings',
+    );
+  });
+
+  it('summarises bulk actions by id count and keeps them before /transactions', () => {
+    const s = _failedEntrySummary({
+      method: 'POST',
+      path: '/transactions/bulk',
+      body: { action: 'delete', ids: [1, 2, 3] },
+    });
+    expect(s.entity).toBe('bulk');
+    expect(s.label).toBe('3');
+  });
+
+  it('extracts tag names from the path for rename/delete', () => {
+    const del = _failedEntrySummary({
+      method: 'DELETE',
+      path: '/tags/Stra%C3%9Fe',
+      body: null,
+    });
+    expect(del).toMatchObject({ entity: 'tag', label: 'Straße', verb: 'delete' });
+    const rename = _failedEntrySummary({
+      method: 'PUT',
+      path: '/tags/Alt',
+      body: { new_name: 'Neu' },
+    });
+    expect(rename.label).toBe('Neu');
+  });
+
+  it('tolerates unparsable detail and missing fields', () => {
+    const s = _failedEntrySummary({
+      method: 'POST',
+      path: '/transactions',
+      body: null,
+      status: 422,
+      detail: '{"detail":[{"loc":["body"]}]}',
+    });
+    expect(s.code).toBe('');
+    expect(s.status).toBe(422);
+    expect(_failedEntrySummary({}).entity).toBe('other');
+  });
+
+  it('strips query strings before matching', () => {
+    expect(
+      _failedEntrySummary({ method: 'POST', path: '/transactions?x=1', body: {} }).entity,
+    ).toBe('transaction');
   });
 });

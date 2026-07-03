@@ -62,13 +62,16 @@ async function saveTagEdit() {
     closeTagModal();
     return;
   }
+  const oldName = appState.tagEdit.name;
   try {
-    if (appState.tagEdit.name) {
-      await api('PUT', `/tags/${encodeURIComponent(appState.tagEdit.name)}`, { new_name: newName });
-    } else {
-      await api('POST', '/tags', { name: newName });
-    }
+    const result = oldName
+      ? await api('PUT', `/tags/${encodeURIComponent(oldName)}`, { new_name: newName })
+      : await api('POST', '/tags', { name: newName });
     closeTagModal();
+    if (
+      _handleQueuedWrite(result, () => _applyTagLocally(oldName ? 'PUT' : 'POST', oldName, newName))
+    )
+      return;
     await loadTags();
     renderTagList();
     await loadAndRender();
@@ -89,15 +92,64 @@ async function deleteTagEdit() {
     confirmLabel: tr('common.delete'),
   });
   if (!ok) return;
+  const oldName = appState.tagEdit.name;
   try {
-    await api('DELETE', `/tags/${encodeURIComponent(appState.tagEdit.name)}`);
+    const result = await api('DELETE', `/tags/${encodeURIComponent(oldName)}`);
     closeTagModal();
+    if (_handleQueuedWrite(result, () => _applyTagLocally('DELETE', oldName))) return;
     await loadTags();
     renderTagList();
     await loadAndRender();
   } catch (e) {
     toast(tr('tx.deleteFailed') + e.message, 'error');
   }
+}
+
+// Mirror a tag create/rename/delete into the in-memory tag list and the loaded
+// transaction pools for the offline queued path; the next sync reload
+// reconciles. availableTags holds canonical server casing (see loadTags), so a
+// new/renamed tag is stored as typed while matching stays case-insensitive.
+function _applyTagLocally(method, oldName, newName) {
+  const tags = appState.ledger.availableTags;
+  const lc = (s) => (s || '').toLowerCase();
+  const sortTags = () =>
+    tags.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  if (method === 'POST') {
+    if (newName && !tags.some((t) => lc(t) === lc(newName))) {
+      tags.push(newName);
+      sortTags();
+    }
+  } else if (method === 'DELETE') {
+    const i = tags.findIndex((t) => lc(t) === lc(oldName));
+    if (i >= 0) tags.splice(i, 1);
+    _renameTagInTxPools(oldName, null);
+  } else if (method === 'PUT') {
+    const i = tags.findIndex((t) => lc(t) === lc(oldName));
+    if (i >= 0) tags[i] = newName;
+    sortTags();
+    _renameTagInTxPools(oldName, newName);
+  }
+  renderTagList();
+  renderAll();
+}
+
+// Rename (newName) or remove (newName == null) a tag across the loaded
+// transaction pools, matching case-insensitively on the old name.
+function _renameTagInTxPools(oldName, newName) {
+  const lcOld = (oldName || '').toLowerCase();
+  const apply = (pool) => {
+    if (!pool) return;
+    pool.forEach((t) => {
+      if (!t.tags || !t.tags.length) return;
+      t.tags =
+        newName == null
+          ? t.tags.filter((x) => x.toLowerCase() !== lcOld)
+          : t.tags.map((x) => (x.toLowerCase() === lcOld ? newName : x));
+    });
+  };
+  apply(appState.ledger.transactions);
+  apply(appState.ledger.all);
+  apply(appState.reports.txPool);
 }
 
 // ── SYNC (service worker outbox) ──────────────────────────────────────────────
@@ -188,12 +240,233 @@ async function syncNow() {
     toast(msg, 'error');
   }
   if (flushed > 0 || failed > 0) {
-    await loadTags();
-    // Replayed POST/PUT/DELETE on /api/recurring would otherwise
-    // leave the in-memory rules list stale until the user opens
-    // the panel; refresh so the next render is correct.
-    await loadRecurringRules();
+    await refreshDomainAfterSync();
+  } else {
+    await loadAndRender();
   }
+  await updateFailedNotice();
+}
+
+// ── DEAD-LETTER RECOVERY ──────────────────────────────────────────────────────
+// drain() moves a write to the `failed` store when the server rejects its
+// replay with a 4xx, so user data is never silently dropped. This surfaces
+// those entries: a drawer section (Import/Export) plus an attention dot on the
+// header sync button, with all-or-nothing retry / discard.
+
+async function updateFailedNotice() {
+  const n = window.PocketLogOutbox ? await window.PocketLogOutbox.failedCount() : 0;
+  // Primary surfacing: a banner at the top of the content, on every view.
+  const banner = document.getElementById('failedSyncBanner');
+  if (banner) banner.hidden = n === 0;
+  const bannerText = document.getElementById('failedSyncBannerText');
+  if (bannerText) {
+    bannerText.textContent = n === 1 ? tr('sync.bannerOne') : tr('sync.bannerMany', { n });
+  }
+  // Secondary cue on the header sync button (reuses the red error dot).
+  const dot = document.getElementById('syncDot');
+  if (dot) dot.classList.toggle('error', n > 0);
+}
+
+// Render pieces for one dead-lettered entry. Classification is the pure,
+// unit-tested _failedEntrySummary (utils.js); this wrapper only translates
+// and formats (locale currency/date), so it stays out of the unit tests.
+function _recoverEntryLines(entry) {
+  const s = _failedEntrySummary(entry);
+  const locale = I18N.getLocale();
+  const entityText =
+    s.entity === 'bulk'
+      ? tr('sync.entityBulk', { n: s.label || '?' })
+      : tr('sync.entity.' + s.entity);
+  const parts = [entityText + ' · ' + tr('sync.verb.' + s.verb)];
+  if (s.entity !== 'bulk' && s.label) parts.push(s.label);
+  if (s.amount != null && !Number.isNaN(Number(s.amount))) {
+    parts.push(fmtCurrency(Number(s.amount)));
+  }
+  if (s.date) parts.push(_parseServerDate(s.date).toLocaleDateString(locale));
+  const reason =
+    s.code === 'csrf_mismatch'
+      ? tr('sync.reasonSession')
+      : tr('sync.reasonRejected', { status: s.status || '?' });
+  return { main: parts.join(' · '), reason };
+}
+
+// Open the recovery sheet from the banner: a self-contained dialog (no drawer
+// navigation) listing every dead-lettered write (what, content, why the
+// server rejected it) with per-entry discard, plus all-at-once retry /
+// discard. Built programmatically like confirmAction so it inherits the same
+// overlay, scroll-lock and Escape handling. No-op when nothing is
+// dead-lettered.
+async function openFailedRecovery() {
+  const entries = window.PocketLogOutbox ? await window.PocketLogOutbox.failedAll() : [];
+  if (!entries.length) return;
+
+  const prevFocus = document.activeElement;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay open';
+  overlay.style.alignItems = 'center';
+
+  const modal = document.createElement('div');
+  modal.className = 'modal confirm-modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', 'recoverTitle');
+
+  const h = document.createElement('h2');
+  h.id = 'recoverTitle';
+  h.textContent = tr('sync.recoverTitle');
+  modal.appendChild(h);
+
+  const p = document.createElement('p');
+  p.className = 'confirm-msg';
+  const countLine = (n) =>
+    (n === 1 ? tr('sync.recoverOne') : tr('sync.recoverMany', { n })) +
+    ' ' +
+    tr('sync.recoverHint');
+  p.textContent = countLine(entries.length);
+  modal.appendChild(p);
+
+  // The concrete entries — textContent throughout, the labels echo user
+  // input (descriptions, names).
+  const list = document.createElement('ul');
+  list.className = 'recover-list';
+  entries.forEach((entry) => {
+    const { main, reason } = _recoverEntryLines(entry);
+    const li = document.createElement('li');
+    li.className = 'recover-item';
+
+    const info = document.createElement('div');
+    info.className = 'recover-item-info';
+    const mainEl = document.createElement('div');
+    mainEl.className = 'recover-item-main';
+    mainEl.textContent = main;
+    mainEl.title = main;
+    info.appendChild(mainEl);
+    const reasonEl = document.createElement('div');
+    reasonEl.className = 'recover-item-reason';
+    reasonEl.textContent = reason;
+    info.appendChild(reasonEl);
+    li.appendChild(info);
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'api-key-revoke-btn';
+    del.textContent = tr('sync.recoverDiscard');
+    del.setAttribute('aria-label', tr('sync.recoverItemDiscard'));
+    del.addEventListener('click', async () => {
+      await window.PocketLogOutbox.failedRemove(entry.id);
+      li.remove();
+      const left = list.children.length;
+      await updateFailedNotice();
+      if (left === 0) {
+        close();
+        toast(tr('sync.recoverDiscarded'));
+      } else {
+        p.textContent = countLine(left);
+      }
+    });
+    li.appendChild(del);
+
+    list.appendChild(li);
+  });
+  modal.appendChild(list);
+
+  const retry = document.createElement('button');
+  retry.type = 'button';
+  retry.className = 'submit-btn';
+  retry.textContent = tr('sync.recoverRetry');
+  modal.appendChild(retry);
+
+  const discard = document.createElement('button');
+  discard.type = 'button';
+  discard.className = 'submit-btn btn-destructive';
+  discard.textContent = tr('sync.recoverDiscardAll');
+  modal.appendChild(discard);
+
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'confirm-cancel';
+  cancel.textContent = tr('common.close');
+  modal.appendChild(cancel);
+
+  overlay.appendChild(modal);
+
+  const close = () => {
+    overlay.removeEventListener('keydown', onKey);
+    overlay.remove();
+    const stillOpen = document.querySelector('.modal-overlay.open');
+    if (!stillOpen) document.body.style.overflow = '';
+    if (prevFocus && document.contains(prevFocus) && typeof prevFocus.focus === 'function') {
+      prevFocus.focus();
+    }
+  };
+  const onKey = (e) => {
+    if (e.key === 'Escape') close();
+  };
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
+  overlay.addEventListener('keydown', onKey);
+  cancel.addEventListener('click', close);
+  // Close first so discard's own confirm isn't stacked on top of this sheet.
+  retry.addEventListener('click', () => {
+    close();
+    retryFailedSync();
+  });
+  discard.addEventListener('click', () => {
+    close();
+    discardFailedSync();
+  });
+
+  document.body.appendChild(overlay);
+  document.body.style.overflow = 'hidden';
+  setTimeout(() => retry.focus(), 50);
+}
+
+// Push the dead-lettered writes back into the outbox and replay them. With the
+// CSRF token now propagated, a write that only failed because of the old
+// token bug goes through; a genuinely invalid one (duplicate name, deleted
+// category) lands back in the failed store — one pass, no retry loop.
+async function retryFailedSync() {
+  if (!window.PocketLogOutbox) return;
+  const n = await window.PocketLogOutbox.requeueFailed();
+  if (n > 0) updateSyncBadge();
+  await syncNow();
+  await updateFailedNotice();
+}
+
+async function discardFailedSync() {
+  if (!window.PocketLogOutbox) return;
+  const ok = await confirmAction({
+    title: tr('sync.recoverDiscardConfirm'),
+    message: tr('sync.recoverDiscardBody'),
+    confirmLabel: tr('sync.recoverDiscard'),
+    destructive: true,
+  });
+  if (!ok) return;
+  await window.PocketLogOutbox.failedClear();
+  await updateFailedNotice();
+  toast(tr('sync.recoverDiscarded'));
+}
+
+// After a sync drains the outbox, the in-memory entity lists may still hold
+// optimistic offline edits — including provisional negative ids from offline
+// creates. Reload every list the offline write path can touch so the server's
+// real rows replace them, then re-render whatever panel is on screen. Replayed
+// writes on /api/recurring need the same treatment, hence the rules reload.
+async function refreshDomainAfterSync() {
+  await Promise.all([
+    loadTags(),
+    loadCategories(),
+    loadGoals(),
+    loadBudgets(),
+    loadRecurringRules(),
+  ]);
+  renderTagList();
+  renderCategories();
+  if (appState.nav.activePanel === 'goals') await renderGoalsView();
+  if (appState.nav.activePanel === 'budgets') await renderBudgetsView();
+  if (appState.nav.activePanel === 'recurring') await renderRecurringView();
   await loadAndRender();
 }
 
@@ -409,8 +682,8 @@ if ('serviceWorker' in navigator) {
         const msg = failed === 1 ? tr('sync.oneFailed') : tr('sync.manyFailed', { n: failed });
         toast(msg, 'error');
       }
-      loadTags();
-      loadAndRender();
+      refreshDomainAfterSync();
+      updateFailedNotice();
     }
   });
 }
@@ -430,7 +703,7 @@ async function exportCSV() {
       _triggerDownload(blob, 'pocketlog.csv');
     }
   } catch (e) {
-    if (e.name !== 'AbortError') showToast(tr('importExport.exportFailed'), 'error');
+    if (e.name !== 'AbortError') toast(tr('importExport.exportFailed'), 'error');
   }
 }
 
@@ -453,7 +726,7 @@ async function downloadExampleCSV() {
       _triggerDownload(blob, filename);
     }
   } catch (e) {
-    if (e.name !== 'AbortError') showToast(tr('common.downloadFailed'), 'error');
+    if (e.name !== 'AbortError') toast(tr('common.downloadFailed'), 'error');
   }
 }
 
@@ -528,6 +801,75 @@ async function importCSV(ev) {
     status.className = 'status-msg err';
   } finally {
     ev.target.value = ''; // allow re-importing the same file
+  }
+}
+
+// ── BACKUP (JSON full export / restore) ───────────────────────────────────────
+async function exportBackup() {
+  try {
+    const res = await fetch(API + '/export/json');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+    const file = new File([blob], 'pocketlog-backup.json', { type: 'application/json' });
+    if (navigator.canShare?.({ files: [file] })) {
+      // No title/text — see exportCSV: avoids an extra Text.txt.
+      await navigator.share({ files: [file] });
+    } else {
+      _triggerDownload(blob, 'pocketlog-backup.json');
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') toast(tr('importExport.exportFailed'), 'error');
+  }
+}
+
+// Stable backend error codes → i18n keys. Anything else falls back to the
+// generic failure message.
+const BACKUP_ERROR_KEYS = {
+  restore_not_empty: 'backup.errorNotEmpty',
+  restore_conflict: 'backup.errorConflict',
+  backup_invalid: 'backup.errorInvalid',
+  backup_unsupported_version: 'backup.errorVersion',
+  backup_too_large: 'backup.errorTooLarge',
+};
+
+async function restoreBackup(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  const status = document.getElementById('backupStatus');
+  status.textContent = tr('backup.restoring');
+  status.className = 'status-msg';
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    // Multipart body — same CSRF handling as importCSV: the double-submit
+    // header is required on every non-GET session request.
+    const res = await fetch(API + '/import/json', {
+      method: 'POST',
+      body: fd,
+      credentials: 'same-origin',
+      headers: window._csrfToken ? { 'X-CSRF-Token': window._csrfToken } : {},
+    });
+    if (!res.ok) {
+      let code = '';
+      try {
+        code = (await res.json()).detail || '';
+      } catch (_) {}
+      status.textContent = tr(BACKUP_ERROR_KEYS[code] || 'backup.restoreFailed');
+      status.className = 'status-msg err';
+      return;
+    }
+    const r = await res.json();
+    status.textContent = tr('backup.restored', { n: r.transactions });
+    status.className = 'status-msg ok';
+    // A restore touches every domain (settings incl. locale and theme,
+    // categories, rules, …) — a full reload rebuilds the app from server
+    // state instead of chasing every cached piece individually.
+    setTimeout(() => location.reload(), 1500);
+  } catch (e) {
+    status.textContent = tr('backup.restoreFailed');
+    status.className = 'status-msg err';
+  } finally {
+    ev.target.value = ''; // allow re-selecting the same file
   }
 }
 
@@ -611,6 +953,135 @@ function renderApiKeys() {
 
     list.appendChild(card);
   });
+}
+
+// ── SIGNED-IN DEVICES (session self-service) ─────────────────────────────────
+// Relative "last active" for the device list. Coarse units are enough — the
+// point is "gerade eben" vs. "vor 3 Wochen", not a stopwatch.
+function _fmtRelativeTime(date) {
+  const t = date.getTime();
+  if (!isFinite(t)) return '';
+  const deltaSeconds = Math.round((t - Date.now()) / 1000); // past = negative
+  const rtf = new Intl.RelativeTimeFormat(I18N.getLocale(), { numeric: 'auto' });
+  const units = [
+    ['year', 31536000],
+    ['month', 2592000],
+    ['week', 604800],
+    ['day', 86400],
+    ['hour', 3600],
+    ['minute', 60],
+  ];
+  for (const [unit, secs] of units) {
+    if (Math.abs(deltaSeconds) >= secs) return rtf.format(Math.trunc(deltaSeconds / secs), unit);
+  }
+  return rtf.format(0, 'minute'); // "in diesem Moment" / "this minute"
+}
+
+async function loadSessions() {
+  try {
+    appState.sessions.list = await api('GET', '/auth/sessions');
+    renderSessions();
+  } catch (_) {}
+}
+
+function renderSessions() {
+  const list = document.getElementById('sessionList');
+  if (!list) return;
+  list.innerHTML = '';
+
+  // Current session pinned first; the rest keeps the backend's
+  // last-seen ordering.
+  const sessions = [...appState.sessions.list].sort(
+    (a, b) => (b.current ? 1 : 0) - (a.current ? 1 : 0),
+  );
+
+  sessions.forEach((s) => {
+    const card = document.createElement('div');
+    card.className = 'api-key-card';
+
+    const name = document.createElement('div');
+    name.className = 'api-key-card-name';
+    name.textContent = _deviceLabelFromUA(s.user_agent) || tr('sessions.unknownDevice');
+    card.appendChild(name);
+
+    if (s.current) {
+      const chips = document.createElement('div');
+      chips.className = 'api-key-card-scopes';
+      const chip = document.createElement('span');
+      chip.className = 'api-key-scope-chip';
+      chip.textContent = tr('sessions.current');
+      chips.appendChild(chip);
+      card.appendChild(chips);
+    }
+
+    const footer = document.createElement('div');
+    footer.className = 'api-key-card-footer';
+
+    const meta = document.createElement('div');
+    meta.className = 'api-key-card-meta';
+    const lastActive = document.createElement('span');
+    lastActive.textContent = tr('sessions.lastActive', {
+      when: _fmtRelativeTime(_parseServerDate(s.last_seen_at)),
+    });
+    meta.appendChild(lastActive);
+    const since = document.createElement('span');
+    since.textContent = tr('sessions.signedInSince', {
+      date: _parseServerDate(s.created_at).toLocaleDateString(I18N.getLocale()),
+    });
+    meta.appendChild(since);
+    footer.appendChild(meta);
+
+    if (!s.current) {
+      // The current session ends via the regular logout button above —
+      // hiding its revoke action avoids an accidental self-logout here.
+      const revokeBtn = document.createElement('button');
+      revokeBtn.className = 'api-key-revoke-btn';
+      revokeBtn.textContent = tr('sessions.revoke');
+      revokeBtn.onclick = () => revokeSessionById(s.id);
+      footer.appendChild(revokeBtn);
+    }
+
+    card.appendChild(footer);
+    list.appendChild(card);
+  });
+}
+
+async function revokeSessionById(id) {
+  const ok = await confirmAction({
+    title: tr('sessions.revokeTitle'),
+    message: tr('sessions.revokeBody'),
+    confirmLabel: tr('sessions.revoke'),
+  });
+  if (!ok) return;
+  try {
+    await api('DELETE', '/auth/sessions/' + id);
+    await loadSessions();
+  } catch (_) {
+    toast(tr('common.actionFailed'), 'error');
+  }
+}
+
+async function revokeOtherSessions() {
+  const ok = await confirmAction({
+    title: tr('sessions.revokeOthersTitle'),
+    message: tr('sessions.revokeOthersBody'),
+    confirmLabel: tr('sessions.revokeOthers'),
+  });
+  if (!ok) return;
+  try {
+    const r = await api('DELETE', '/auth/sessions');
+    const n = (r && r.revoked) || 0;
+    toast(
+      n === 0
+        ? tr('sessions.revokedNone')
+        : n === 1
+          ? tr('sessions.revokedOne')
+          : tr('sessions.revokedMany', { n }),
+    );
+    await loadSessions();
+  } catch (_) {
+    toast(tr('common.actionFailed'), 'error');
+  }
 }
 
 function openApiKeyModal() {
@@ -1115,23 +1586,23 @@ function renderAdminUserList() {
         tags.push(`<span class="admin-user-tag">${tr('users.pwPending')}</span>`);
       const actions = [];
       actions.push(
-        `<button type="button" onclick="openAdminResetPwModal(${u.id})">${tr('users.resetPw')}</button>`,
+        `<button type="button" data-action="openAdminResetPwModal" data-args="[${u.id}]">${tr('users.resetPw')}</button>`,
       );
       if (!u.is_admin) {
         if (u.is_active) {
           actions.push(
             `<button type="button" ${isSelf ? 'disabled' : ''} ` +
-              `onclick="adminToggleActive(${u.id}, false)">${tr('users.deactivate')}</button>`,
+              `data-action="adminToggleActive" data-args="[${u.id}, false]">${tr('users.deactivate')}</button>`,
           );
         } else {
           actions.push(
-            `<button type="button" onclick="adminToggleActive(${u.id}, true)">${tr('users.reactivate')}</button>`,
+            `<button type="button" data-action="adminToggleActive" data-args="[${u.id}, true]">${tr('users.reactivate')}</button>`,
           );
         }
       }
       actions.push(
         `<button type="button" class="btn-destructive" ${isSelf ? 'disabled' : ''} ` +
-          `onclick="adminDeleteUserConfirm(${u.id})">${tr('common.delete')}</button>`,
+          `data-action="adminDeleteUserConfirm" data-args="[${u.id}]">${tr('common.delete')}</button>`,
       );
       return `
               <div class="admin-user-row">

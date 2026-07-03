@@ -1,4 +1,7 @@
-# PocketLog
+<h1>
+  <img src="https://raw.githubusercontent.com/anym001/pocketlog/HEAD/frontend/icons/icon-192.png" alt="" width="42" height="42" align="top">
+  PocketLog
+</h1>
 
 [![Tests](https://img.shields.io/github/actions/workflow/status/anym001/pocketlog/test.yml?label=Tests)](https://github.com/anym001/pocketlog/actions/workflows/test.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://github.com/anym001/pocketlog/blob/HEAD/LICENSE)
@@ -6,15 +9,18 @@
 [![GHCR](https://img.shields.io/badge/GHCR-pocketlog-2496ED?logo=docker&logoColor=white)](https://github.com/anym001/pocketlog/pkgs/container/pocketlog)
 [![Docker Hub](https://img.shields.io/badge/Docker%20Hub-pocketlog-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/anym001/pocketlog)
 
-A household budget book as a Progressive Web App (PWA) — runs in the browser on all
-major platforms (iOS, Android, macOS, Windows, Linux) and can be installed as an app
-on the home screen.
+> **A privacy-first household budget book you fully self-host — a fast PWA on every
+> device, backed by a real scoped API for automation. No cloud, no accounts, no
+> tracking, no telemetry.**
 
-Designed for **private self-hosting**: data resides exclusively on your own server —
-by default in an embedded SQLite file (no separate database required), optionally in an
-external MariaDB. The app runs in your own container. All assets (fonts, icons,
-JS libraries) are served from your own server — no CDN calls, no external connections,
-no tracking, no telemetry.
+Runs in the browser on all major platforms — iOS, Android, macOS, Windows, Linux —
+and installs to the home screen like a native app.
+
+Designed for **private self-hosting**: data lives only on your own server — by
+default in an embedded SQLite file (no separate database required), optionally in an
+external MariaDB, all in your own container. Every asset (fonts, icons, JS libraries)
+is served from your own origin, so the app makes no CDN calls and no external
+connections at all.
 
 ## Screenshots
 
@@ -44,6 +50,7 @@ no tracking, no telemetry.
 - [Login & Security](#login--security)
 - [API Access](#api-access)
 - [Logging & Audit Trail](#logging--audit-trail)
+- [Backup & Restore](#backup--restore)
 - [Emergency Recovery](#emergency-recovery)
 - [Image](#image)
 - [License](#license)
@@ -73,6 +80,8 @@ no tracking, no telemetry.
   how many were added since the last visit
 - **Reports & Charts** — monthly/yearly overview, category and tag reports, trend view
   and forecast
+- **Bulk actions** — select multiple transactions at once to reassign a category, add or
+  remove tags, or delete them in one step
 - **Search** — full-text, category, and tag filtering in the transaction list
 - **CSV Import / Export** — UTF-8 or CP1252, max. 5 MB; export all transactions as
   semicolon-delimited CSV. Import is also available over the API for automated
@@ -154,6 +163,16 @@ docker run -d \
   ghcr.io/anym001/pocketlog:latest
 ```
 
+> **MariaDB 11.6+ (`innodb_snapshot_isolation`):** From MariaDB 11.6 the
+> `innodb_snapshot_isolation` setting can be **ON** by default. Under it, two
+> requests writing the *same* row at once (e.g. the offline outbox reconnecting
+> and replaying queued writes, plus the per-request session refresh) get a
+> transient `ERROR 1020 … try restarting transaction`. PocketLog **retries these
+> automatically**, so no action is required. If you'd rather remove the errors at
+> the source, set `innodb_snapshot_isolation = OFF` in your MariaDB config —
+> PocketLog does not rely on snapshot isolation. Standalone InnoDB before 11.6
+> and the default SQLite backend are unaffected.
+
 ## Configuration
 
 | Variable | Default | Description |
@@ -177,6 +196,9 @@ docker run -d \
 | `DEFAULT_CURRENCY` | `EUR` | Starting currency for new accounts (ISO 4217: `EUR`, `USD`, `GBP`, `CHF`, `JPY`). Display only, overridable per user. |
 | `SESSION_COOKIE_SECURE` | `auto` | Controls the `Secure` flag on session cookies. `auto` (default): set when the browser-facing transport is HTTPS, detected via `X-Forwarded-Proto` (honoured only from a trusted proxy, see `TRUSTED_PROXIES`) or the raw request scheme — works for direct HTTP (LAN / first-run) and HTTPS-proxy setups without any change. `1`: always set (use when your proxy does not forward `X-Forwarded-Proto`). `0`: never set. |
 | `TRUSTED_PROXIES` | *(private ranges)* | Comma-separated IPs or CIDR ranges of trusted reverse proxies (e.g. `172.16.0.0/12,192.168.1.1`), or `*` to trust all peers. Decides which sources may set `X-Real-IP`/`X-Forwarded-For` (audit log) and `X-Forwarded-Proto` (Secure-cookie detection). Empty (default) trusts the standard private/loopback ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `::1/128`, `fe80::/10`), so a container on a private network behind a proxy works out of the box; an explicit list replaces those defaults. |
+| `LOGIN_IP_LOCKOUT_THRESHOLD` | `20` | Failed logins/setup attempts from one source IP before the per-IP backoff starts. Deliberately above the per-user threshold — a household behind one NAT/proxy IP shares this budget. |
+| `LOGIN_IP_LOCKOUT_MAX_SECONDS` | `600` | Cap for the per-IP backoff (doubles per failure beyond the threshold). |
+| `LOGIN_IP_FAILURE_WINDOW_SECONDS` | `900` | Failures older than this no longer count toward the per-IP threshold. |
 | `SESSION_LIFETIME_HOURS` | `24` | Session duration without "Stay logged in" |
 | `SESSION_REMEMBER_DAYS` | `30` | Session duration with "Stay logged in" |
 | `SESSION_ABSOLUTE_DAYS` | `7` | Maximum session duration (standard) |
@@ -220,6 +242,10 @@ untrusted networks.
   and a special character
 - **Brute-force protection**: after several failed attempts an automatic lockout period
   kicks in; admins can lift it via _Reset Password_
+- **Per-IP throttle**: failed logins (and setup probes) are additionally counted per
+  source IP with an exponential backoff, so distributing guesses across many usernames
+  doesn't dodge the lockout and a third party can't hammer a known account into a
+  permanent lockout for free (tunable via `LOGIN_IP_*`, see [Configuration](#configuration))
 - **Session**: active for 24 hours by default, 30 days with "Stay logged in";
   after an absolute maximum of 7 or 90 days a new login is required
 
@@ -242,7 +268,7 @@ the lower ones:
 
 | Scope | Grants |
 |---|---|
-| `read` | all read endpoints (transactions, categories, tags, CSV export) |
+| `read` | all read endpoints (transactions, categories, tags, CSV export, JSON backup export) |
 | `import` | CSV import only (`POST /api/import/csv`) |
 | `write` | full data access — every create / update / delete plus `import` and `read` |
 
@@ -343,12 +369,57 @@ survive container updates without the app needing to manage files.
 > centralised logging infrastructure (journald, syslog, Loki …) is already in place.
 > Both can be combined.
 
+## Backup & Restore
+
+Two complementary layers:
+
+### Per-account backup (in-app, JSON)
+
+Every user can download a full backup of their own account under
+**Settings → Import/Export → Backup**: transactions, categories, tags, goals,
+budgets, recurring bookings, and settings in one versioned JSON file
+(`GET /api/export/json`, also available to `read`-scoped API keys for
+scheduled off-site pulls).
+
+Restoring (`POST /api/import/json`) is a migration/recovery path, not a merge:
+it only runs against an account **without ledger data**. On a fresh instance —
+or after *Delete all data* — upload the file and the account comes back
+exactly as exported, including recurring-rule state, so no booking is created
+twice. Restore is session-only and never reachable with an API key.
+
+### Whole-database snapshot (operator, SQLite)
+
+The SQLite database runs in WAL mode — **a plain file copy of a running
+instance is not a valid backup**. Use the CLI, which snapshots via SQLite's
+`VACUUM INTO` and is safe while the app keeps running:
+
+```bash
+docker exec pocketlog pocketlog backup
+# → /config/db/backups/pocketlog-YYYYMMDD-HHMMSS.db
+```
+
+(The first `pocketlog` is the container name, the second the CLI launcher
+inside the image; `python -m app.cli backup` remains equivalent.)
+
+`--output <file-or-directory>` picks a different target. A cron line on the
+host makes it nightly:
+
+```cron
+15 3 * * * docker exec pocketlog pocketlog backup
+```
+
+Restore by stopping the container and replacing `/config/db/pocketlog.db`
+with the snapshot (remove any leftover `-wal`/`-shm` files next to it).
+
+With the **MariaDB option**, back up on the database side instead:
+`mariadb-dump --single-transaction pocketlog`.
+
 ## Emergency Recovery
 
 Forgot the admin password:
 
 ```bash
-docker exec -it pocketlog python -m app.cli reset-admin-password
+docker exec -it pocketlog pocketlog reset-admin-password
 ```
 
 Resets the password and any lockout; a new password must be set on the next login.

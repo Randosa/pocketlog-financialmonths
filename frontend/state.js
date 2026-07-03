@@ -22,6 +22,12 @@ const appState = {
   view: {
     month: new Date().getMonth(),
     year: new Date().getFullYear(),
+    // Month/year picker popover (core.js): open flag plus the year currently
+    // being browsed in the grid. pickerYear stays separate from `year` so
+    // stepping years in the popover doesn't reload transactions until a month
+    // is chosen; it is seeded from `year` each time the popover opens.
+    pickerOpen: false,
+    pickerYear: null,
   },
 
   // Draft of the booking form (the in/out toggle and the tags being attached
@@ -53,6 +59,18 @@ const appState = {
     rangeLock: null,
     txPool: null,
     searchExitTarget: null,
+    // Stepper-label popover for jumping the period further than ±1 (month grid
+    // for kind 'month', 12-year grid for kind 'year'). pickerOpen tracks the
+    // open state; pickerYear is the year/decade being browsed, committed to the
+    // range anchor only when a cell is picked.
+    pickerOpen: false,
+    pickerYear: new Date().getFullYear(),
+    // Breakdown ("Aufteilung") donut toggles: entity (categories vs tags) and
+    // direction ('out' expenses / 'in' income). A donut is parts-of-a-whole,
+    // so it shows one entity + one direction at a time; the two segmented
+    // controls flip these.
+    breakdownKind: 'category', // 'category' | 'tag'
+    breakdownDir: 'out',
   },
 
   // Spending-trend chart state (entity selection + year range + picker UI).
@@ -85,6 +103,10 @@ const appState = {
     categories: [],
     availableTags: [],
     all: null,
+    // Timestamp of the last online full-history cache warm (see
+    // _warmFullHistoryCache in ledger.js). Throttles the background GET so
+    // rapid month stepping doesn't refetch the whole history each time.
+    fullHistoryWarmedAt: 0,
   },
 
   // Navigation / cross-cutting UI state. _activePanel / _bookingModalOpenedAt /
@@ -100,12 +122,26 @@ const appState = {
     goalRelayoutTimer: null,
   },
 
-  // Tag picker (shared between the transaction form and the recurring form).
-  // pickerSelection / _tagPickerContext / currentRecurringTags.
+  // Tag picker (shared between the transaction form, the recurring form and
+  // the bulk add/remove actions). pickerSelection / _tagPickerContext /
+  // currentRecurringTags. `bulkRemovePool` holds the union of tags present on
+  // the currently selected transactions, so the "remove tag" picker offers
+  // only tags that can actually be removed.
   tagPicker: {
     selection: [],
     context: 'transaction',
     recurringTags: [],
+    bulkRemovePool: [],
+  },
+
+  // Multi-select / bulk-edit mode in the ledger list. `active` toggles the
+  // whole UI; `ids` are the currently marked transaction ids; `visibleIds` is
+  // the id set of the last rendered list (drives "Select all" and survives a
+  // search/filter re-render). selectionActive / selectionIds / selectionVisible.
+  selection: {
+    active: false,
+    ids: [],
+    visibleIds: [],
   },
 
   // Category create/edit modal draft. editingCatId / editingCatColor /
@@ -144,6 +180,11 @@ const appState = {
 
   // API key management (settings drawer). _apiKeys.
   apiKeys: {
+    list: [],
+  },
+
+  // Signed-in devices (account panel): the user's active sessions.
+  sessions: {
     list: [],
   },
 

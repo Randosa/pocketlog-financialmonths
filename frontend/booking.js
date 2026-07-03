@@ -55,11 +55,17 @@ function closeModal() {
   releaseFocusTrap('booking');
   restoreModalFocus('booking');
 }
-// Backdrop dismiss shared by every modal overlay: the overlay's inline
-// onclick passes its own event, so the click counts as "outside" exactly
-// when it landed on the overlay itself rather than the dialog inside it.
+// Backdrop dismiss shared by every modal overlay. The delegation engine
+// (core.js) binds `this` to the overlay carrying the data-action attribute —
+// the click counts as "outside" exactly when it landed on the overlay itself
+// rather than the dialog inside it. `closeFn` arrives as a global function
+// name (data-args is JSON and can't carry a function reference); a direct
+// function still works for JS callers like closeModalOutside.
 function closeOnBackdrop(e, closeFn) {
-  if (e.target === e.currentTarget) closeFn();
+  const overlay = this instanceof Element ? this : e.currentTarget;
+  if (e.target !== overlay) return;
+  const fn = typeof closeFn === 'string' ? window[closeFn] : closeFn;
+  if (typeof fn === 'function') fn();
 }
 // Ledger rows open this modal on `pointerup` (the swipe handler).
 // The browser then synthesizes a trailing `click` at the same spot,
@@ -69,7 +75,8 @@ function closeOnBackdrop(e, closeFn) {
 // opening so only a deliberate later tap dismisses it.
 function closeModalOutside(e) {
   if (Date.now() - appState.nav.bookingModalOpenedAt < 400) return;
-  closeOnBackdrop(e, closeModal);
+  // Forward `this` (the overlay) — closeOnBackdrop's outside check needs it.
+  closeOnBackdrop.call(this, e, closeModal);
 }
 function editTransaction(id) {
   const num = Number(id);
@@ -85,11 +92,13 @@ function editTransaction(id) {
 }
 
 // Offline-delete fallback shared by the swipe-to-delete row and the edit
-// modal: when offline, queue the DELETE in the outbox for the SW to replay
-// and report that it was handled. Returns false when online (or no outbox),
-// so the caller surfaces the original error instead.
-async function _enqueueOfflineDelete(id) {
-  if (!navigator.onLine || !window.PocketLogOutbox) return false;
+// modal: when the DELETE failed at the network level, queue it in the outbox
+// for the SW to replay and report that it was handled. Returns false for a
+// real HTTP error (or no outbox), so the caller surfaces the original error
+// instead. Gated on the error shape rather than navigator.onLine, which lies
+// on iOS (reports online in airplane mode).
+async function _enqueueOfflineDelete(id, err) {
+  if (!_isOfflineWriteError(err) || !window.PocketLogOutbox) return false;
   await window.PocketLogOutbox.enqueue({ method: 'DELETE', path: `/transactions/${id}` });
   return true;
 }
@@ -104,7 +113,7 @@ async function deleteCurrentTransaction() {
     closeModal();
     await loadAndRender();
   } catch (e) {
-    if (await _enqueueOfflineDelete(editId)) {
+    if (await _enqueueOfflineDelete(editId, e)) {
       closeModal();
       updateSyncBadge();
       return;
@@ -181,21 +190,80 @@ async function addTransaction() {
   const editId = document.getElementById('modalOverlay').dataset.editId;
   const method = editId ? 'PUT' : 'POST';
   const path = editId ? `/transactions/${editId}` : '/transactions';
+  // Tag every create with a client op-id so an offline replay that already
+  // reached the server is deduplicated instead of creating a second row.
+  // Edits (PUT) are idempotent by nature and need none.
+  if (method === 'POST') body.client_op_id = _newOpId();
   try {
-    await api(method, path, body);
+    const result = await api(method, path, body);
     mergeIntoAvailableTags(appState.form.tags);
     closeModal();
+    if (result && result.queued) {
+      // Offline: the service worker queued the write (HTTP 202) instead of
+      // reaching the server. Reloading now would pull the stale API cache and
+      // make the save look reverted — so mirror the change into the in-memory
+      // pools and re-render. The next sync (SYNC_DONE → loadAndRender)
+      // reconciles with the server, replacing the provisional create row.
+      _applyTxLocally(method, editId, body);
+      renderAll();
+      updateSyncBadge();
+      toast(tr('tx.queuedOffline'));
+      return;
+    }
     await Promise.all([loadAndRender(), loadTags()]);
   } catch (e) {
-    if (!navigator.onLine && window.PocketLogOutbox) {
+    if (_isOfflineWriteError(e) && window.PocketLogOutbox) {
+      // Network-level failure (offline, or the write timed out and aborted)
+      // and no active service worker to queue it — enqueue it ourselves and
+      // reflect it locally, same as the 202 path above. A real HTTP error
+      // (e.g. a 500) carries e.status and falls through to the toast instead.
       await window.PocketLogOutbox.enqueue({ method, path, body });
       mergeIntoAvailableTags(appState.form.tags);
+      _applyTxLocally(method, editId, body);
       closeModal();
+      renderAll();
       updateSyncBadge();
+      toast(tr('tx.queuedOffline'));
       return;
     }
     toast(tr('tx.saveFailed') + e.message, 'error');
   }
+}
+
+// Mirror a single create/edit into the in-memory transaction pools so an
+// offline save shows immediately, before the service worker replays it.
+// Mirrors _applyBulkLocally (ledger.js): only the ledger pools are touched —
+// the report cache is already invalidated by api() on every non-GET. All
+// display fields derive from category_id via getCatById, so updating the raw
+// fields is enough.
+function _applyTxLocally(method, editId, body) {
+  const fields = {
+    amount: Number(body.amount),
+    desc: body.desc,
+    category_id: body.category_id,
+    date: body.date,
+    type: body.type,
+    tags: (body.tags || []).slice(),
+  };
+  if (method === 'PUT') {
+    const id = Number(editId);
+    [appState.ledger.transactions, appState.ledger.all].forEach((pool) => {
+      if (!pool) return;
+      const t = pool.find((x) => x.id === id);
+      if (t) Object.assign(t, fields);
+    });
+    return;
+  }
+  // Create: there's no server id yet. A negative provisional id keeps the row
+  // distinct from real ones until the next sync reload replaces it.
+  const tx = { id: -Date.now(), source_rule_id: null, ...fields };
+  // The month list is scoped to the displayed month, so only add it there when
+  // its date falls in that month; otherwise it would render under a stray date.
+  const [y, m] = body.date.split('-').map(Number);
+  if (y === appState.view.year && m === appState.view.month + 1) {
+    appState.ledger.transactions.push(tx);
+  }
+  if (appState.ledger.all) appState.ledger.all.push(tx);
 }
 
 function mergeIntoAvailableTags(tags) {

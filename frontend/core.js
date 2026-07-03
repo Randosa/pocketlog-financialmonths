@@ -11,6 +11,109 @@ const ICON_SVG = {
   close: '<svg class="ui-icon" aria-hidden="true"><use href="#icon-close"/></svg>',
 };
 
+// ── DECLARATIVE EVENT DELEGATION ──────────────────────────────────────────────
+// The CSP is script-src 'self': inline handler attributes (onclick="…") are
+// blocked. Instead, elements declare their handler with data attributes and
+// the document-level listeners below dispatch them:
+//
+//   data-action          → click        data-action-change → change
+//   data-action-input    → input        data-action-submit → submit
+//   data-action-blur     → blur (via focusout)
+//   data-action-keydown  → keydown
+//
+// The attribute value is a global function name, resolved on window at event
+// time — so declaration order between modules doesn't matter, and markup
+// inserted via innerHTML is covered without per-render wiring. Arguments come
+// from `data-args`, a JSON array with three magic tokens:
+//
+//   "@event"  → the DOM event        "@el"     → the element carrying the
+//   "@value"  → el.value               data-action attribute
+//   "@value#" → Number(el.value)
+//
+// `data-stop` additionally stops propagation (for actions nested inside other
+// clickable rows). Submit dispatch always calls preventDefault() — every form
+// in this app is JS-driven. The handler runs with `this` bound to the
+// declaring element, mirroring inline-handler semantics (closeOnBackdrop
+// relies on that).
+function _resolveActionArgs(el, event) {
+  const raw = el.getAttribute('data-args');
+  if (!raw) return [];
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    console.error('data-args is not valid JSON:', raw, el);
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [parsed];
+  return parsed.map((a) => {
+    if (a === '@event') return event;
+    if (a === '@el') return el;
+    if (a === '@value') return el.value;
+    if (a === '@value#') return Number(el.value);
+    return a;
+  });
+}
+
+function _dispatchAction(el, attr, event) {
+  const name = el.getAttribute(attr);
+  if (!name) return; // declared but intentionally empty (e.g. submit no-op)
+  const fn = window[name];
+  if (typeof fn !== 'function') {
+    console.error('Unknown action handler:', name, el);
+    return;
+  }
+  if (el.hasAttribute('data-stop')) event.stopPropagation();
+  fn.apply(el, _resolveActionArgs(el, event));
+}
+
+[
+  ['click', 'data-action'],
+  ['change', 'data-action-change'],
+  ['input', 'data-action-input'],
+  ['submit', 'data-action-submit'],
+  // Native blur doesn't bubble; focusout is its bubbling twin.
+  ['focusout', 'data-action-blur'],
+  ['keydown', 'data-action-keydown'],
+].forEach(([type, attr]) => {
+  document.addEventListener(type, (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    const el = target.closest(`[${attr}]`);
+    if (!el) return;
+    if (type === 'submit') event.preventDefault();
+    _dispatchAction(el, attr, event);
+  });
+});
+
+// Keyboard activation for non-native interactive elements (rows with
+// role="button" + data-action). Mirrors native button semantics: Enter and
+// Space trigger the action; Space is prevented from scrolling; `!e.repeat`
+// avoids re-firing while held. `.is-key-active` gives the keyboard press the
+// same visual feedback that mouse `:active` does. Native form controls are
+// excluded — they already translate Enter/Space to click themselves (and a
+// row's nested <button> must not double-fire).
+const _NATIVE_ACTIVATION_TAGS = new Set(['BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA']);
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return;
+  if (event.repeat) return;
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target || _NATIVE_ACTIVATION_TAGS.has(target.tagName)) return;
+  const el = target.closest('[data-action]');
+  if (!el || el !== target) return; // only the focused element itself
+  event.preventDefault();
+  el.classList.add('is-key-active');
+  setTimeout(() => el.classList.remove('is-key-active'), 150);
+  _dispatchAction(el, 'data-action', event);
+});
+
+// Proxy for the hidden <input type="file"> pickers: the visible button sits
+// in the layout, the input itself stays display:none.
+function clickHiddenInput(id) {
+  const el = document.getElementById(id);
+  if (el) el.click();
+}
+
 // ── i18n SHORTHAND ────────────────────────────────────────────────────────────
 // `tr()` (not `t()`) is the translation helper: `t` is used pervasively
 // as the transaction loop variable in .map((t) => …) callbacks, so a
@@ -37,18 +140,25 @@ try {
 // Which report is currently active (source of truth for panel-charts).
 // Persisted in localStorage so a reload shows the last state.
 const REPORT_STORAGE_KEY = 'pocketlog.report';
-const REPORT_IDS = ['overview', 'month', 'year', 'categories', 'tags', 'trend', 'forecast', 'top'];
+const REPORT_IDS = ['overview', 'course', 'breakdown', 'trend', 'forecast', 'top'];
 // Report id → i18n key. Resolved through t() at render time so the
 // titles follow the active language.
 const REPORT_TITLE_KEYS = {
   overview: 'reports.overview',
-  month: 'reports.month',
-  year: 'reports.year',
-  categories: 'reports.categories',
-  tags: 'reports.tags',
+  course: 'reports.course',
+  breakdown: 'reports.breakdown',
   trend: 'reports.trend',
   forecast: 'reports.forecast',
   top: 'reports.top',
+};
+// Old report ids (pre-merge) → their successor, so a stored selection still
+// lands somewhere sensible: month/year folded into "course", categories/tags
+// into "breakdown".
+const _REPORT_ID_MIGRATE = {
+  month: 'course',
+  year: 'course',
+  categories: 'breakdown',
+  tags: 'breakdown',
 };
 const reportTitle = (id) => tr(REPORT_TITLE_KEYS[id] || 'reports.overview');
 // Reports state lives in appState.reports (state.js). `current` (the active
@@ -57,11 +167,12 @@ const reportTitle = (id) => tr(REPORT_TITLE_KEYS[id] || 'reports.overview');
 // pins the picker for reports only meaningful at one granularity; null = free)
 // keep their identical defaults from state.js.
 appState.reports.current = (() => {
-  const v = localStorage.getItem(REPORT_STORAGE_KEY);
+  let v = localStorage.getItem(REPORT_STORAGE_KEY);
+  if (v && _REPORT_ID_MIGRATE[v]) v = _REPORT_ID_MIGRATE[v];
   return REPORT_IDS.includes(v) ? v : 'overview';
 })();
 // Chart.js instances per report, kept separate so destroy() never hits a foreign instance.
-const chartInsts = { month: null, year: null, categories: null, tags: null, trend: null };
+const chartInsts = { course: null, breakdown: null, trend: null };
 
 // ── TREND-STATE ───────────────────────────────────────────────────────────────
 const TREND_STORAGE_KEY = 'pocketlog.trend';
@@ -129,6 +240,12 @@ function _resetAuthClientState() {
       navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_API_CACHE' });
     }
   } catch (_) {}
+  // Clear the in-page outbox token too (the SW's is cleared via the message
+  // above). The drain guard then defers any queued writes until a fresh login
+  // re-seeds the token, rather than replaying them with a stale one.
+  try {
+    window.PocketLogOutbox?.setCsrfToken?.('');
+  } catch (_) {}
   window._csrfToken = '';
 }
 
@@ -158,6 +275,37 @@ async function _hardResetClientState() {
   location.replace('/?reset=' + Date.now());
 }
 
+// How long a write may block before we abort it and let the caller queue it
+// in the outbox. Without this, a hanging request (iOS airplane mode, "lie-fi")
+// never rejects — the fetch stalls until the OS TCP timeout, the save modal
+// stays open, and when the network returns the late request surfaces an error
+// instead of having been queued. Deliberately LONGER than the service worker's
+// own write timeout (sw.js WRITE_TIMEOUT_MS) so that, on an SW-controlled page,
+// the SW wins the race and returns its 202 "queued" before this page-side
+// abort ever fires; this abort is the fallback for pages with no active SW.
+const WRITE_TIMEOUT_MS = 12000;
+
+// Client-side idempotency key for offline-queued creates. crypto.randomUUID is
+// available in every secure context (the PWA is HTTPS-only); the fallback keeps
+// non-secure dev origins working. The same op-id rides along when the outbox
+// replays a queued create, so the server can dedupe a create that already
+// reached it before the client aborted (see crud.create_transaction).
+function _newOpId() {
+  try {
+    if (self.crypto && crypto.randomUUID) return crypto.randomUUID();
+  } catch (_) {}
+  return 'op-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+}
+
+// True when an api() rejection is a network-level failure (fetch rejected or
+// the write timed out and was aborted) rather than a real HTTP response. HTTP
+// errors carry `.status` (set below); network/abort failures don't. Callers
+// use this to decide whether to queue the write offline — replacing the old
+// navigator.onLine check, which lies on iOS (reports online in airplane mode).
+function _isOfflineWriteError(e) {
+  return !!e && e.status == null;
+}
+
 async function api(method, path, body) {
   const headers = { 'Content-Type': 'application/json' };
   if (method !== 'GET' && window._csrfToken) {
@@ -165,7 +313,22 @@ async function api(method, path, body) {
   }
   const opts = { method, headers, credentials: 'same-origin' };
   if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(API + path, opts);
+  // Arm an abort timeout for writes so a stalled request fails fast enough to
+  // be queued, instead of hanging until the OS timeout. GETs are left alone —
+  // the service worker races them against its own read timeout and falls back
+  // to the cache.
+  let _writeTimer = null;
+  if (method !== 'GET' && typeof AbortController === 'function') {
+    const controller = new AbortController();
+    opts.signal = controller.signal;
+    _writeTimer = setTimeout(() => controller.abort(), WRITE_TIMEOUT_MS);
+  }
+  let res;
+  try {
+    res = await fetch(API + path, opts);
+  } finally {
+    if (_writeTimer) clearTimeout(_writeTimer);
+  }
   if (res.status === 401) {
     if (!window._suppressAuthReload) {
       _resetAuthClientState();
@@ -214,13 +377,39 @@ async function authFetch(method, path, body, opts = {}) {
   return res;
 }
 
-function _broadcastCsrfToSw(token) {
+// Push the current CSRF token to every outbox that may replay a queued
+// write, so the replay carries an X-CSRF-Token the server accepts:
+//   - the service worker's outbox (Background Sync replay), and
+//   - the in-page outbox (db.js, a classic script with its own module
+//     state), which drains on the `online` event whenever Background Sync
+//     isn't available — notably iOS Safari.
+// Miss the page-side token and an offline edit replays without the header,
+// the server rejects it with 403, drain dead-letters it, and the change
+// looks reverted on reconnect.
+// Shared offline-write helper. When api() reports a queued write (HTTP 202 —
+// the service worker stored it in the outbox instead of reaching the server),
+// reflect the change locally via applyLocally(), tell the user it's saved
+// offline, and bump the sync badge. Returns true when it handled a queued
+// write, so the caller skips its normal reload-from-cache path (which offline
+// would just re-render the stale data and make the change look lost).
+function _handleQueuedWrite(result, applyLocally) {
+  if (!result || !result.queued) return false;
+  try {
+    applyLocally();
+  } catch (_) {}
+  if (typeof updateSyncBadge === 'function') updateSyncBadge();
+  toast(tr('common.queuedOffline'));
+  return true;
+}
+
+function _propagateCsrfToken(token) {
+  const t = token || '';
+  try {
+    window.PocketLogOutbox?.setCsrfToken?.(t);
+  } catch (_) {}
   try {
     if (navigator.serviceWorker?.controller) {
-      navigator.serviceWorker.controller.postMessage({
-        type: 'SET_CSRF',
-        token: token || '',
-      });
+      navigator.serviceWorker.controller.postMessage({ type: 'SET_CSRF', token: t });
     }
   } catch (_) {}
 }
@@ -460,10 +649,6 @@ function openReport(id) {
   try {
     localStorage.setItem(REPORT_STORAGE_KEY, id);
   } catch (e) {}
-  if (id === 'month' && appState.reports.range.kind !== 'month')
-    setRangeKind('month', { skipRender: true });
-  if (id === 'year' && appState.reports.range.kind !== 'year')
-    setRangeKind('year', { skipRender: true });
   showPanel('charts');
 }
 
@@ -492,6 +677,7 @@ function drawerNav(panelId) {
   if (panelId === 'dpInfo') renderInfoPanel();
   if (panelId === 'dpAdminUsers') loadAdminUsers();
   if (panelId === 'dpApiKeys') loadApiKeys();
+  if (panelId === 'dpAccount') loadSessions();
 }
 
 function drawerBack() {
@@ -676,5 +862,90 @@ function changeMonth(d) {
     appState.view.month = 11;
     appState.view.year--;
   }
+  loadAndRender();
+}
+
+// ── MONTH/YEAR PICKER (header popover) ────────────────────────────────────────
+// The month label is a button that opens a popover: a year stepper above a
+// 12-month grid, plus a "Today" shortcut. The arrows next to it keep doing
+// ±1-month steps; the popover is for jumping further. pickerYear (state.js) is
+// the year being browsed and is only committed to view.year when a month is
+// picked, so stepping years doesn't reload the ledger.
+
+function _monthPickerCloseOnOutside(e) {
+  const pop = document.getElementById('monthPicker');
+  const label = document.getElementById('monthLabel');
+  if (!pop || pop.contains(e.target) || (label && label.contains(e.target))) return;
+  toggleMonthPicker(false);
+}
+
+function _monthPickerCloseOnEsc(e) {
+  if (e.key === 'Escape') toggleMonthPicker(false);
+}
+
+function toggleMonthPicker(open) {
+  const next = open === undefined ? !appState.view.pickerOpen : !!open;
+  const pop = document.getElementById('monthPicker');
+  const label = document.getElementById('monthLabel');
+  if (!pop) return;
+  appState.view.pickerOpen = next;
+  pop.hidden = !next;
+  if (label) label.setAttribute('aria-expanded', String(next));
+  if (next) {
+    appState.view.pickerYear = appState.view.year;
+    rememberModalFocus('monthPicker');
+    renderMonthPicker();
+    trapFocusIn(pop, 'monthPicker');
+    // Defer so the click that opened the popover doesn't immediately close it.
+    setTimeout(() => {
+      document.addEventListener('pointerdown', _monthPickerCloseOnOutside);
+      document.addEventListener('keydown', _monthPickerCloseOnEsc);
+      const current = pop.querySelector('.mp-month.is-current') || pop.querySelector('.mp-month');
+      if (current) current.focus();
+    }, 0);
+  } else {
+    releaseFocusTrap('monthPicker');
+    document.removeEventListener('pointerdown', _monthPickerCloseOnOutside);
+    document.removeEventListener('keydown', _monthPickerCloseOnEsc);
+    restoreModalFocus('monthPicker');
+  }
+}
+
+function renderMonthPicker() {
+  const year = appState.view.pickerYear;
+  document.getElementById('mpYear').textContent = String(year);
+  const grid = document.getElementById('mpGrid');
+  const today = new Date();
+  grid.innerHTML = appState.calendar.monthsShort
+    .map((name, m) => {
+      const isSelected = m === appState.view.month && year === appState.view.year;
+      const isToday = m === today.getMonth() && year === today.getFullYear();
+      const cls = ['mp-month'];
+      if (isSelected) cls.push('is-current');
+      if (isToday) cls.push('is-today');
+      return `<button type="button" class="${cls.join(' ')}" data-action="pickMonth" data-args="[${m}]"${
+        isSelected ? ' aria-current="true"' : ''
+      }>${_escText(name)}</button>`;
+    })
+    .join('');
+}
+
+function stepPickerYear(d) {
+  appState.view.pickerYear += d;
+  renderMonthPicker();
+}
+
+function pickMonth(m) {
+  appState.view.month = m;
+  appState.view.year = appState.view.pickerYear;
+  toggleMonthPicker(false);
+  loadAndRender();
+}
+
+function goToCurrentMonth() {
+  const now = new Date();
+  appState.view.month = now.getMonth();
+  appState.view.year = now.getFullYear();
+  toggleMonthPicker(false);
   loadAndRender();
 }

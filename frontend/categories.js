@@ -95,8 +95,27 @@ function openTagPicker() {
 function openTagPickerFor(context) {
   appState.tagPicker.context = context;
   rememberModalFocus('tagPicker');
+  // bulkAdd / bulkRemove start from an empty selection (the picked tags are the
+  // ones to add / remove); the form contexts seed their current tags.
   appState.tagPicker.selection =
-    context === 'recurring' ? [...appState.tagPicker.recurringTags] : [...appState.form.tags];
+    context === 'recurring'
+      ? [...appState.tagPicker.recurringTags]
+      : context === 'transaction'
+        ? [...appState.form.tags]
+        : [];
+  // Creating a new tag only makes sense when adding; the remove picker offers
+  // only tags already present on the selection.
+  const isRemove = context === 'bulkRemove';
+  const newGroup = document.getElementById('tagPickerNewGroup');
+  if (newGroup) newGroup.style.display = isRemove ? 'none' : '';
+  const title = document.getElementById('tagPickerTitle');
+  if (title)
+    title.textContent =
+      context === 'bulkAdd'
+        ? tr('selection.addTagTitle')
+        : isRemove
+          ? tr('selection.removeTagTitle')
+          : tr('tags.pickTitle');
   document.getElementById('tagPickerFilter').value = '';
   document.getElementById('tagPickerNew').value = '';
   const chips = document.getElementById('tagPickerChips');
@@ -128,6 +147,14 @@ function closeTagPickerOutside(e) {
   if (e.target === document.getElementById('tagPickerOverlay')) closeTagPicker();
 }
 function commitTagPicker() {
+  const ctx = appState.tagPicker.context;
+  if (ctx === 'bulkAdd' || ctx === 'bulkRemove') {
+    const tags = [...appState.tagPicker.selection];
+    closeTagPicker();
+    if (!tags.length) return;
+    bulkApply({ action: ctx === 'bulkAdd' ? 'add_tags' : 'remove_tags', tags });
+    return;
+  }
   if (appState.tagPicker.context === 'recurring') {
     appState.tagPicker.recurringTags = [...appState.tagPicker.selection];
     closeTagPicker();
@@ -143,9 +170,12 @@ function renderTagPickerChips() {
   const box = document.getElementById('tagPickerChips');
   if (!box) return;
   const q = (document.getElementById('tagPickerFilter').value || '').trim().toLowerCase();
-  const filtered = q
-    ? appState.ledger.availableTags.filter((t) => t.toLowerCase().includes(q))
-    : appState.ledger.availableTags;
+  // The remove picker is scoped to the tags actually on the selected rows.
+  const source =
+    appState.tagPicker.context === 'bulkRemove'
+      ? appState.tagPicker.bulkRemovePool
+      : appState.ledger.availableTags;
+  const filtered = q ? source.filter((t) => t.toLowerCase().includes(q)) : source;
   const selected = new Set(appState.tagPicker.selection.map((x) => x.toLowerCase()));
   box.innerHTML = filtered
     .map((t) => {
@@ -529,11 +559,11 @@ function _colorSwatchesMarkup(currentColor, pickFnName) {
     presets
       .map((p) => {
         const isActive = p.hex.toLowerCase() === currentColor.toLowerCase();
-        return `<button type="button" class="color-swatch${isActive ? ' active' : ''}" style="background:${p.hex}" aria-label="${_escAttr(tr('categories.pickColorAria', { name: p.name }))}" aria-pressed="${isActive}" onclick="${pickFnName}('${p.hex}')"></button>`;
+        return `<button type="button" class="color-swatch${isActive ? ' active' : ''}" style="background:${p.hex}" aria-label="${_escAttr(tr('categories.pickColorAria', { name: p.name }))}" aria-pressed="${isActive}" data-action="${pickFnName}" data-args='["${p.hex}"]'></button>`;
       })
       .join('') +
     `<label class="color-swatch-custom" title="${_escAttr(tr('categories.customColorName'))}">
-     <input type="color" value="${currentColor}" onchange="${pickFnName}(this.value)" aria-label="${_escAttr(tr('categories.customColor'))}">
+     <input type="color" value="${currentColor}" data-action-change="${pickFnName}" data-args='["@value"]' aria-label="${_escAttr(tr('categories.customColor'))}">
    </label>`
   );
 }
@@ -591,7 +621,7 @@ function renderIconPicker() {
         const pressed = active ? 'true' : 'false';
         return `<button type="button" class="icon-picker-cell${active}"
               aria-pressed="${pressed}" aria-label="${id}"
-              onclick="pickIcon('${id}')">${catIconSvg(id)}</button>`;
+              data-action="pickIcon" data-args='["${id}"]'>${catIconSvg(id)}</button>`;
       })
       .join('');
     return `<section class="icon-picker-section">
@@ -620,17 +650,15 @@ async function saveCategoryEdit() {
     toast(tr('categories.invalidColor'), 'error');
     return;
   }
+  const editId = appState.catEdit.id;
+  const fields = { name, icon, color: appState.catEdit.color };
   try {
-    if (appState.catEdit.id) {
-      await api('PUT', `/categories/${appState.catEdit.id}`, {
-        name,
-        icon,
-        color: appState.catEdit.color,
-      });
-    } else {
-      await api('POST', '/categories', { name, icon, color: appState.catEdit.color });
-    }
+    const result = editId
+      ? await api('PUT', `/categories/${editId}`, fields)
+      : await api('POST', '/categories', fields);
     closeCatModal();
+    if (_handleQueuedWrite(result, () => _applyCatLocally(editId ? 'PUT' : 'POST', editId, fields)))
+      return;
     await loadCategories();
     renderCategories();
     await loadAndRender();
@@ -643,6 +671,25 @@ async function saveCategoryEdit() {
   }
 }
 
+// Mirror a category create/edit/delete into the in-memory list so an offline
+// change shows immediately; the next sync reload reconciles it (see
+// refreshDomainAfterSync). Display fields (icon/color) on transaction rows are
+// resolved from this list via getCatById, so updating it is enough.
+function _applyCatLocally(method, id, fields) {
+  const list = appState.ledger.categories;
+  if (method === 'DELETE') {
+    const i = list.findIndex((c) => c.id === Number(id));
+    if (i >= 0) list.splice(i, 1);
+  } else if (method === 'PUT') {
+    const c = list.find((x) => x.id === Number(id));
+    if (c) Object.assign(c, fields);
+  } else {
+    list.push({ id: -Date.now(), ...fields }); // provisional id until sync
+  }
+  renderCategories();
+  renderAll();
+}
+
 async function deleteCategoryEdit() {
   if (!appState.catEdit.id) return;
   const ok = await confirmAction({
@@ -650,9 +697,11 @@ async function deleteCategoryEdit() {
     confirmLabel: tr('common.delete'),
   });
   if (!ok) return;
+  const editId = appState.catEdit.id;
   try {
-    await api('DELETE', `/categories/${appState.catEdit.id}`);
+    const result = await api('DELETE', `/categories/${editId}`);
     closeCatModal();
+    if (_handleQueuedWrite(result, () => _applyCatLocally('DELETE', editId))) return;
     await loadCategories();
     renderCategories();
     await loadAndRender();

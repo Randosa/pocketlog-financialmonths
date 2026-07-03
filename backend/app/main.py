@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 
@@ -18,6 +19,8 @@ from .logging_config import configure_logging
 # Configure the pocketlog logger namespace at import time, so it applies under
 # uvicorn (which imports app.main:app) as well as under pytest and the CLI.
 configure_logging()
+
+logger = logging.getLogger("pocketlog.api")
 
 # Swagger UI and the OpenAPI schema are off by default. Both leak the full
 # API surface and Swagger's "Try it out" issues real requests against this
@@ -45,6 +48,29 @@ async def _domain_error_handler(
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    """Catch-all for anything not already mapped to a response.
+
+    Starlette's exception middleware picks the most specific registered
+    handler for the raised type, so this only fires when neither FastAPI's
+    built-ins (HTTPException, RequestValidationError) nor DomainError above
+    matched — i.e. a genuine bug. Without it, such an error would still 500,
+    but silently, with nothing in the pocketlog.* log namespace to find it by.
+    The response stays a generic message: the real detail belongs in the log,
+    not in a payload a client could see.
+    """
+    logger.error(
+        "unhandled exception method=%s path=%s",
+        request.method,
+        request.url.path,
+        exc_info=exc,
+    )
+    return JSONResponse(status_code=500, content={"detail": "internal_error"})
+
+
 # Content-Security-Policy — set in the backend because SWAG's ssl.conf does
 # not configure one. The remaining security headers (HSTS, X-Frame-Options,
 # X-Content-Type-Options, Referrer-Policy, X-Download-Options) are already
@@ -53,10 +79,16 @@ async def _domain_error_handler(
 # upstream headers, not replaces).
 #
 # CSP notes:
-# - 'unsafe-inline' for script/style is required because index.html ships an
-#   inline theme-bootstrap script and the app uses `onclick="..."` attributes
-#   plus inline `style="--cat-color:..."`. A nonce-based policy would be
-#   stricter but requires refactoring every inline handler.
+# - script-src 'self' (NO 'unsafe-inline'): inline scripts and inline handler
+#   attributes are blocked, which is the main XSS mitigation this header
+#   buys. The frontend is built for it — the former inline theme bootstrap
+#   lives in /theme-boot.js, and all former onclick="..." attributes are
+#   declarative data-action attributes dispatched by the delegation engine
+#   in core.js. Never reintroduce inline <script> or on*= attributes.
+# - style-src keeps 'unsafe-inline': the markup uses inline style attributes
+#   (e.g. `style="--cat-color:..."`) extensively. CSS injection is a far
+#   weaker primitive than script injection; dropping it would require
+#   removing every style attribute for little practical gain.
 # - frame-ancestors 'none' tightens SWAG's X-Frame-Options SAMEORIGIN for
 #   PocketLog only and is the modern, authoritative anti-clickjacking
 #   directive (browsers honour it over X-Frame-Options when both are present).
@@ -65,7 +97,7 @@ async def _domain_error_handler(
 #   the supported same-origin deployment.
 CSP_POLICY = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline'; "
+    "script-src 'self'; "
     "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; "
     "font-src 'self'; "
@@ -83,6 +115,7 @@ _SHELL_NO_CACHE_PATHS = frozenset(
     {
         "/",
         "/index.html",
+        "/theme-boot.js",
         "/app.js",
         "/utils.js",
         "/reportsData.js",

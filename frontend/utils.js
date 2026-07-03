@@ -152,6 +152,110 @@ function _filterTransactions(pool, { query, categoryFilterId, tagFilterName }, c
   });
 }
 
+// Parse a backend datetime string. The API serialises naive UTC timestamps
+// without a timezone suffix ("2026-07-02T05:22:50"); `new Date()` would read
+// those as *local* time and shift every displayed timestamp by the UTC
+// offset. Appending "Z" pins the parse to UTC; strings that already carry a
+// zone (Z or ±hh:mm) pass through untouched.
+function _parseServerDate(iso) {
+  if (!iso) return new Date(NaN);
+  const hasZone = /[zZ]$|[+-]\d\d:?\d\d$/.test(iso);
+  return new Date(hasZone ? iso : iso + 'Z');
+}
+
+// Human-readable device label ("Browser · OS") from a stored User-Agent
+// string, for the signed-in-devices list. Deliberately coarse — the point is
+// telling one's own devices apart, not UA forensics. Returns '' when nothing
+// recognisable is found so the caller can substitute a localized fallback.
+function _deviceLabelFromUA(ua) {
+  ua = ua || '';
+  let browser = '';
+  // Alternative iOS browsers are all WebKit but carry vendor tokens —
+  // matched before the generic Chrome/Safari patterns (mirrors
+  // settings._detectBrowser for the local device).
+  if (/CriOS\//.test(ua)) browser = 'Chrome';
+  else if (/FxiOS\//.test(ua)) browser = 'Firefox';
+  else if (/EdgiOS\//.test(ua) || /Edg\//.test(ua)) browser = 'Edge';
+  else if (/OPR\//.test(ua)) browser = 'Opera';
+  else if (/Firefox\//.test(ua)) browser = 'Firefox';
+  else if (/Chrome\//.test(ua)) browser = 'Chrome';
+  else if (/Safari\//.test(ua) && /Version\//.test(ua)) browser = 'Safari';
+
+  let os = '';
+  if (/iPad/.test(ua)) os = 'iPadOS';
+  else if (/iPhone|iPod/.test(ua)) os = 'iOS';
+  else if (/Android/.test(ua)) os = 'Android';
+  else if (/Windows NT/.test(ua)) os = 'Windows';
+  else if (/Mac OS X|Macintosh/.test(ua)) os = 'macOS';
+  else if (/CrOS/.test(ua)) os = 'ChromeOS';
+  else if (/Linux/.test(ua)) os = 'Linux';
+
+  if (browser && os) return browser + ' · ' + os;
+  return browser || os || '';
+}
+
+// Classify a dead-lettered outbox entry ({method, path, body, status,
+// detail}) into renderable pieces for the sync-recovery sheet. Pure — no
+// i18n: returns machine keys plus the raw content fields; the caller
+// translates and formats. Shape:
+//   entity  'transaction' | 'bulk' | 'category' | 'goal' | 'budget' |
+//           'recurring' | 'tag' | 'settings' | 'other'
+//   verb    'create' | 'update' | 'delete'
+//   label   best-effort content identifier (description / name / tag), ''
+//   amount  string amount for transactions, else null
+//   date    ISO date for transactions, else null
+//   code    machine detail code from the server response, '' if none
+//   status  HTTP status of the rejection, 0 if unknown
+function _failedEntrySummary(entry) {
+  const method = (entry && entry.method) || '';
+  const path = ((entry && entry.path) || '').split('?')[0];
+  const body = (entry && entry.body) || {};
+  const verb = method === 'DELETE' ? 'delete' : method === 'PUT' ? 'update' : 'create';
+
+  let entity = 'other';
+  let label = '';
+  let amount = null;
+  let date = null;
+  if (path.startsWith('/transactions/bulk')) {
+    entity = 'bulk';
+    label = Array.isArray(body.ids) ? String(body.ids.length) : '';
+  } else if (path.startsWith('/transactions')) {
+    entity = 'transaction';
+    label = body.desc || body.description || '';
+    amount = body.amount != null ? String(body.amount) : null;
+    date = body.date || null;
+  } else if (path.startsWith('/categories')) {
+    entity = 'category';
+    label = body.name || '';
+  } else if (path.startsWith('/goals')) {
+    entity = 'goal';
+    label = body.name || '';
+  } else if (path.startsWith('/budgets')) {
+    entity = 'budget';
+  } else if (path.startsWith('/recurring')) {
+    entity = 'recurring';
+    label = body.name || '';
+  } else if (path.startsWith('/tags')) {
+    entity = 'tag';
+    // /tags/<name> for rename/delete; body.name for create.
+    const tail = decodeURIComponent(path.slice('/tags/'.length) || '');
+    label = body.new_name || body.name || tail;
+  } else if (path.startsWith('/settings')) {
+    entity = 'settings';
+  }
+
+  // The server detail is stored as the raw response text — usually the JSON
+  // error envelope {"detail": "machine_code"}. Anything non-string (Pydantic
+  // 422 arrays) or unparsable collapses to ''.
+  let code = '';
+  try {
+    const parsed = JSON.parse(entry.detail || '');
+    if (parsed && typeof parsed.detail === 'string') code = parsed.detail;
+  } catch (e) {}
+
+  return { entity, verb, label, amount, date, code, status: (entry && entry.status) || 0 };
+}
+
 // --- Backend error codes → i18n keys ---------------------------------------
 
 // Map a backend 422 (Pydantic) password error onto an i18n key + params.
@@ -215,6 +319,9 @@ if (typeof module !== 'undefined' && module.exports) {
     _filterTransactions,
     _passwordErrorKey,
     _importReport,
+    _parseServerDate,
+    _deviceLabelFromUA,
+    _failedEntrySummary,
     _recurringDaysInMonth,
     _recurringClampDay,
     _recurringAddMonths,
