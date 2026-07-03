@@ -604,7 +604,27 @@
     "recoverDiscarded": "Discarded.",
     "recoverFix": "Fix",
     "bannerOne": "1 change not saved",
-    "bannerMany": "{n} changes not saved"
+    "bannerMany": "{n} changes not saved",
+    "recoverDiscardAll": "Discard All",
+    "recoverItemDiscard": "Discard this entry",
+    "entityBulk": "Bulk action ({n} transactions)",
+    "entity": {
+      "transaction": "Transaction",
+      "category": "Category",
+      "goal": "Goal",
+      "budget": "Budget",
+      "recurring": "Recurring booking",
+      "tag": "Tag",
+      "settings": "Settings",
+      "other": "Change"
+    },
+    "verb": {
+      "create": "Create",
+      "update": "Edit",
+      "delete": "Delete"
+    },
+    "reasonRejected": "Rejected by the server (HTTP {status})",
+    "reasonSession": "Session issue — “Try again” should fix it."
   },
   "date": {
     "today": "Today",

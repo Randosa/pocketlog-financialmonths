@@ -96,6 +96,16 @@
     return items.length;
   }
 
+  async function failedRemove(id) {
+    const db = await open();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(FAILED_STORE, 'readwrite');
+      tx.objectStore(FAILED_STORE).delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
   async function failedClear() {
     const db = await open();
     return new Promise((resolve, reject) => {
@@ -201,6 +211,7 @@
     clear,
     failedAll,
     failedCount,
+    failedRemove,
     failedClear,
     requeueFailed,
     setCsrfToken,

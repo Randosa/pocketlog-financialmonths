@@ -3791,6 +3791,43 @@
         line-height: 1.4;
         margin: 0 0 var(--space-20);
       }
+      /* Failed-sync recovery sheet: the list of dead-lettered writes. */
+      .recover-list {
+        list-style: none;
+        margin: 0 0 var(--space-16);
+        padding: 0;
+        max-height: 40vh;
+        overflow-y: auto;
+        text-align: left;
+      }
+      .recover-item {
+        display: flex;
+        align-items: center;
+        gap: var(--space-8);
+        padding: var(--space-8) 0;
+        border-bottom: 0.5px solid var(--hairline-soft);
+      }
+      .recover-item:last-child {
+        border-bottom: none;
+      }
+      .recover-item-info {
+        flex: 1;
+        min-width: 0;
+      }
+      .recover-item-main {
+        font-size: var(--fs-footnote);
+        color: var(--text2);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .recover-item-reason {
+        font-size: var(--fs-caption);
+        color: var(--text3);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       .confirm-modal {
         max-width: 360px;
         padding-bottom: max(var(--space-20), env(safe-area-inset-bottom));

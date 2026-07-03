@@ -456,3 +456,88 @@ describe('_deviceLabelFromUA', () => {
     expect(_deviceLabelFromUA('')).toBe('');
   });
 });
+
+describe('_failedEntrySummary', () => {
+  const { _failedEntrySummary } = utils;
+
+  it('classifies a transaction create with content fields', () => {
+    const s = _failedEntrySummary({
+      method: 'POST',
+      path: '/transactions',
+      body: { desc: 'Edeka', amount: '12.34', date: '2026-07-01', category_id: 3 },
+      status: 400,
+      detail: '{"detail":"unknown_category"}',
+    });
+    expect(s).toEqual({
+      entity: 'transaction',
+      verb: 'create',
+      label: 'Edeka',
+      amount: '12.34',
+      date: '2026-07-01',
+      code: 'unknown_category',
+      status: 400,
+    });
+  });
+
+  it('maps methods to verbs and paths to entities', () => {
+    expect(_failedEntrySummary({ method: 'PUT', path: '/transactions/9', body: {} }).verb).toBe(
+      'update',
+    );
+    expect(_failedEntrySummary({ method: 'DELETE', path: '/goals/2', body: null }).entity).toBe(
+      'goal',
+    );
+    expect(_failedEntrySummary({ method: 'POST', path: '/recurring', body: { name: 'Miete' } })).toMatchObject(
+      { entity: 'recurring', label: 'Miete' },
+    );
+    expect(_failedEntrySummary({ method: 'POST', path: '/budgets', body: {} }).entity).toBe(
+      'budget',
+    );
+    expect(_failedEntrySummary({ method: 'PUT', path: '/settings', body: {} }).entity).toBe(
+      'settings',
+    );
+  });
+
+  it('summarises bulk actions by id count and keeps them before /transactions', () => {
+    const s = _failedEntrySummary({
+      method: 'POST',
+      path: '/transactions/bulk',
+      body: { action: 'delete', ids: [1, 2, 3] },
+    });
+    expect(s.entity).toBe('bulk');
+    expect(s.label).toBe('3');
+  });
+
+  it('extracts tag names from the path for rename/delete', () => {
+    const del = _failedEntrySummary({
+      method: 'DELETE',
+      path: '/tags/Stra%C3%9Fe',
+      body: null,
+    });
+    expect(del).toMatchObject({ entity: 'tag', label: 'Straße', verb: 'delete' });
+    const rename = _failedEntrySummary({
+      method: 'PUT',
+      path: '/tags/Alt',
+      body: { new_name: 'Neu' },
+    });
+    expect(rename.label).toBe('Neu');
+  });
+
+  it('tolerates unparsable detail and missing fields', () => {
+    const s = _failedEntrySummary({
+      method: 'POST',
+      path: '/transactions',
+      body: null,
+      status: 422,
+      detail: '{"detail":[{"loc":["body"]}]}',
+    });
+    expect(s.code).toBe('');
+    expect(s.status).toBe(422);
+    expect(_failedEntrySummary({}).entity).toBe('other');
+  });
+
+  it('strips query strings before matching', () => {
+    expect(
+      _failedEntrySummary({ method: 'POST', path: '/transactions?x=1', body: {} }).entity,
+    ).toBe('transaction');
+  });
+});

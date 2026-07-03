@@ -267,13 +267,38 @@ async function updateFailedNotice() {
   if (dot) dot.classList.toggle('error', n > 0);
 }
 
+// Render pieces for one dead-lettered entry. Classification is the pure,
+// unit-tested _failedEntrySummary (utils.js); this wrapper only translates
+// and formats (locale currency/date), so it stays out of the unit tests.
+function _recoverEntryLines(entry) {
+  const s = _failedEntrySummary(entry);
+  const locale = I18N.getLocale();
+  const entityText =
+    s.entity === 'bulk'
+      ? tr('sync.entityBulk', { n: s.label || '?' })
+      : tr('sync.entity.' + s.entity);
+  const parts = [entityText + ' · ' + tr('sync.verb.' + s.verb)];
+  if (s.entity !== 'bulk' && s.label) parts.push(s.label);
+  if (s.amount != null && !Number.isNaN(Number(s.amount))) {
+    parts.push(fmtCurrency(Number(s.amount)));
+  }
+  if (s.date) parts.push(_parseServerDate(s.date).toLocaleDateString(locale));
+  const reason =
+    s.code === 'csrf_mismatch'
+      ? tr('sync.reasonSession')
+      : tr('sync.reasonRejected', { status: s.status || '?' });
+  return { main: parts.join(' · '), reason };
+}
+
 // Open the recovery sheet from the banner: a self-contained dialog (no drawer
-// navigation) offering retry or discard. Built programmatically like
-// confirmAction so it inherits the same overlay, scroll-lock and Escape
-// handling. No-op when nothing is dead-lettered.
+// navigation) listing every dead-lettered write (what, content, why the
+// server rejected it) with per-entry discard, plus all-at-once retry /
+// discard. Built programmatically like confirmAction so it inherits the same
+// overlay, scroll-lock and Escape handling. No-op when nothing is
+// dead-lettered.
 async function openFailedRecovery() {
-  const n = window.PocketLogOutbox ? await window.PocketLogOutbox.failedCount() : 0;
-  if (n === 0) return;
+  const entries = window.PocketLogOutbox ? await window.PocketLogOutbox.failedAll() : [];
+  if (!entries.length) return;
 
   const prevFocus = document.activeElement;
   const overlay = document.createElement('div');
@@ -293,9 +318,57 @@ async function openFailedRecovery() {
 
   const p = document.createElement('p');
   p.className = 'confirm-msg';
-  const count = n === 1 ? tr('sync.recoverOne') : tr('sync.recoverMany', { n });
-  p.textContent = count + ' ' + tr('sync.recoverHint');
+  const countLine = (n) =>
+    (n === 1 ? tr('sync.recoverOne') : tr('sync.recoverMany', { n })) +
+    ' ' +
+    tr('sync.recoverHint');
+  p.textContent = countLine(entries.length);
   modal.appendChild(p);
+
+  // The concrete entries — textContent throughout, the labels echo user
+  // input (descriptions, names).
+  const list = document.createElement('ul');
+  list.className = 'recover-list';
+  entries.forEach((entry) => {
+    const { main, reason } = _recoverEntryLines(entry);
+    const li = document.createElement('li');
+    li.className = 'recover-item';
+
+    const info = document.createElement('div');
+    info.className = 'recover-item-info';
+    const mainEl = document.createElement('div');
+    mainEl.className = 'recover-item-main';
+    mainEl.textContent = main;
+    mainEl.title = main;
+    info.appendChild(mainEl);
+    const reasonEl = document.createElement('div');
+    reasonEl.className = 'recover-item-reason';
+    reasonEl.textContent = reason;
+    info.appendChild(reasonEl);
+    li.appendChild(info);
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'api-key-revoke-btn';
+    del.textContent = tr('sync.recoverDiscard');
+    del.setAttribute('aria-label', tr('sync.recoverItemDiscard'));
+    del.addEventListener('click', async () => {
+      await window.PocketLogOutbox.failedRemove(entry.id);
+      li.remove();
+      const left = list.children.length;
+      await updateFailedNotice();
+      if (left === 0) {
+        close();
+        toast(tr('sync.recoverDiscarded'));
+      } else {
+        p.textContent = countLine(left);
+      }
+    });
+    li.appendChild(del);
+
+    list.appendChild(li);
+  });
+  modal.appendChild(list);
 
   const retry = document.createElement('button');
   retry.type = 'button';
@@ -306,7 +379,7 @@ async function openFailedRecovery() {
   const discard = document.createElement('button');
   discard.type = 'button';
   discard.className = 'submit-btn btn-destructive';
-  discard.textContent = tr('sync.recoverDiscard');
+  discard.textContent = tr('sync.recoverDiscardAll');
   modal.appendChild(discard);
 
   const cancel = document.createElement('button');

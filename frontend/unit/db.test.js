@@ -158,3 +158,21 @@ describe('PocketLogOutbox.drain', () => {
     expect(await OB.failedCount()).toBe(0);
   });
 });
+
+describe('PocketLogOutbox.failedRemove', () => {
+  it('removes exactly one dead-lettered entry, leaving the rest', async () => {
+    OB.setCsrfToken('tok');
+    await OB.enqueue({ method: 'POST', path: '/transactions', body: { a: 1 } });
+    await OB.enqueue({ method: 'DELETE', path: '/transactions/7', body: null });
+    globalThis.fetch = vi.fn(async () => reply(422));
+    await OB.drain('/api');
+
+    const before = await OB.failedAll();
+    expect(before.length).toBe(2);
+
+    await OB.failedRemove(before[0].id);
+    const after = await OB.failedAll();
+    expect(after.length).toBe(1);
+    expect(after[0].id).toBe(before[1].id);
+  });
+});
