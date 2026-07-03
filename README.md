@@ -1,5 +1,5 @@
 <h1>
-  <img src="frontend/icons/icon-192.png" alt="" width="42" height="42" align="top">
+  <img src="https://raw.githubusercontent.com/anym001/pocketlog/HEAD/frontend/icons/icon-192.png" alt="" width="42" height="42" align="top">
   PocketLog
 </h1>
 
