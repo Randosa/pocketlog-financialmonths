@@ -194,6 +194,68 @@ function _deviceLabelFromUA(ua) {
   return browser || os || '';
 }
 
+// Classify a dead-lettered outbox entry ({method, path, body, status,
+// detail}) into renderable pieces for the sync-recovery sheet. Pure — no
+// i18n: returns machine keys plus the raw content fields; the caller
+// translates and formats. Shape:
+//   entity  'transaction' | 'bulk' | 'category' | 'goal' | 'budget' |
+//           'recurring' | 'tag' | 'settings' | 'other'
+//   verb    'create' | 'update' | 'delete'
+//   label   best-effort content identifier (description / name / tag), ''
+//   amount  string amount for transactions, else null
+//   date    ISO date for transactions, else null
+//   code    machine detail code from the server response, '' if none
+//   status  HTTP status of the rejection, 0 if unknown
+function _failedEntrySummary(entry) {
+  const method = (entry && entry.method) || '';
+  const path = ((entry && entry.path) || '').split('?')[0];
+  const body = (entry && entry.body) || {};
+  const verb = method === 'DELETE' ? 'delete' : method === 'PUT' ? 'update' : 'create';
+
+  let entity = 'other';
+  let label = '';
+  let amount = null;
+  let date = null;
+  if (path.startsWith('/transactions/bulk')) {
+    entity = 'bulk';
+    label = Array.isArray(body.ids) ? String(body.ids.length) : '';
+  } else if (path.startsWith('/transactions')) {
+    entity = 'transaction';
+    label = body.desc || body.description || '';
+    amount = body.amount != null ? String(body.amount) : null;
+    date = body.date || null;
+  } else if (path.startsWith('/categories')) {
+    entity = 'category';
+    label = body.name || '';
+  } else if (path.startsWith('/goals')) {
+    entity = 'goal';
+    label = body.name || '';
+  } else if (path.startsWith('/budgets')) {
+    entity = 'budget';
+  } else if (path.startsWith('/recurring')) {
+    entity = 'recurring';
+    label = body.name || '';
+  } else if (path.startsWith('/tags')) {
+    entity = 'tag';
+    // /tags/<name> for rename/delete; body.name for create.
+    const tail = decodeURIComponent(path.slice('/tags/'.length) || '');
+    label = body.new_name || body.name || tail;
+  } else if (path.startsWith('/settings')) {
+    entity = 'settings';
+  }
+
+  // The server detail is stored as the raw response text — usually the JSON
+  // error envelope {"detail": "machine_code"}. Anything non-string (Pydantic
+  // 422 arrays) or unparsable collapses to ''.
+  let code = '';
+  try {
+    const parsed = JSON.parse(entry.detail || '');
+    if (parsed && typeof parsed.detail === 'string') code = parsed.detail;
+  } catch (e) {}
+
+  return { entity, verb, label, amount, date, code, status: (entry && entry.status) || 0 };
+}
+
 // --- Backend error codes → i18n keys ---------------------------------------
 
 // Map a backend 422 (Pydantic) password error onto an i18n key + params.
@@ -259,6 +321,7 @@ if (typeof module !== 'undefined' && module.exports) {
     _importReport,
     _parseServerDate,
     _deviceLabelFromUA,
+    _failedEntrySummary,
     _recurringDaysInMonth,
     _recurringClampDay,
     _recurringAddMonths,

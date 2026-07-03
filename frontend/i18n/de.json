@@ -604,7 +604,27 @@
     "recoverDiscarded": "Verworfen.",
     "recoverFix": "Beheben",
     "bannerOne": "1 Änderung nicht gespeichert",
-    "bannerMany": "{n} Änderungen nicht gespeichert"
+    "bannerMany": "{n} Änderungen nicht gespeichert",
+    "recoverDiscardAll": "Alle verwerfen",
+    "recoverItemDiscard": "Diesen Eintrag verwerfen",
+    "entityBulk": "Sammelaktion ({n} Buchungen)",
+    "entity": {
+      "transaction": "Buchung",
+      "category": "Kategorie",
+      "goal": "Ziel",
+      "budget": "Budget",
+      "recurring": "Dauerauftrag",
+      "tag": "Tag",
+      "settings": "Einstellungen",
+      "other": "Änderung"
+    },
+    "verb": {
+      "create": "Erstellen",
+      "update": "Ändern",
+      "delete": "Löschen"
+    },
+    "reasonRejected": "Vom Server abgelehnt (HTTP {status})",
+    "reasonSession": "Sitzungsproblem – „Erneut versuchen“ sollte helfen."
   },
   "date": {
     "today": "Heute",
