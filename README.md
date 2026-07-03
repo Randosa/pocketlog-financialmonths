@@ -1,4 +1,7 @@
-# PocketLog
+<h1>
+  <img src="frontend/icons/icon-192.png" alt="" width="42" height="42" align="top">
+  PocketLog
+</h1>
 
 [![Tests](https://img.shields.io/github/actions/workflow/status/anym001/pocketlog/test.yml?label=Tests)](https://github.com/anym001/pocketlog/actions/workflows/test.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://github.com/anym001/pocketlog/blob/HEAD/LICENSE)
