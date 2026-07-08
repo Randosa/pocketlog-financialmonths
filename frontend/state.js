@@ -122,6 +122,15 @@ const appState = {
     goalRelayoutTimer: null,
   },
 
+  // Post-login boot. `failed` is set when the data loads after auth died
+  // (backend restarting, dead network) — the boot-error banner is visible
+  // and retryBoot() may run; `retrying` guards against overlapping retries
+  // (a tap and the online event firing together). See app.js _loadBootData.
+  boot: {
+    failed: false,
+    retrying: false,
+  },
+
   // Tag picker (shared between the transaction form, the recurring form and
   // the bulk add/remove actions). pickerSelection / _tagPickerContext /
   // currentRecurringTags. `bulkRemovePool` holds the union of tags present on

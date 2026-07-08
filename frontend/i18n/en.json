@@ -1,6 +1,8 @@
 {
   "app": {
-    "documentTitle": "PocketLog – Budget Book"
+    "documentTitle": "PocketLog – Budget Book",
+    "bootFailed": "Data couldn't be loaded.",
+    "bootRetry": "Try Again"
   },
   "common": {
     "save": "Save",

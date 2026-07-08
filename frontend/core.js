@@ -249,12 +249,13 @@ function _resetAuthClientState() {
   window._csrfToken = '';
 }
 
-// ── RELOAD DIAGNOSTICS ────────────────────────────────────────────────────────
-// Every automatic location.reload() records WHY it happened, so the cause
-// shows up in the server log (docker logs / LOG_FILE) instead of vanishing
-// with the page. The browser can't write to the server log directly and the
-// page's memory dies with the reload, so the reason is parked in localStorage
-// only as a hand-over buffer: the next authenticated boot delivers it to
+// ── BOOT/RELOAD DIAGNOSTICS ───────────────────────────────────────────────────
+// Every automatic location.reload() — and a boot whose data loads died
+// (app.js _loadBootData) — records WHY it happened, so the cause shows up in
+// the server log (docker logs / LOG_FILE) instead of vanishing with the
+// page. The browser can't write to the server log directly and the page's
+// memory dies with a reload, so the reason is parked in localStorage only as
+// a hand-over buffer: the next authenticated boot delivers it to
 // POST /api/client-log/reload-events and clears the buffer. Reasons are a
 // closed enum validated by the backend — no free text ends up in log lines.
 // Everything here is fail-safe: diagnostics must never break the app.
