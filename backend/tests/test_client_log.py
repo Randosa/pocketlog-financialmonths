@@ -50,7 +50,8 @@ def test_events_land_in_log(client, regular_user, caplog):
         },
     )
     assert res.status_code == 204
-    lines = [r.getMessage() for r in caplog.records if "client reload" in r.getMessage()]
+    messages = (r.getMessage() for r in caplog.records)
+    lines = [m for m in messages if "client reload" in m]
     assert len(lines) == 2
     assert f"user_id={regular_user.id} reason=sw_update" in lines[0]
     assert "occurred_at=2026-07-08T06:30:00+00:00" in lines[0]
@@ -60,10 +61,8 @@ def test_events_land_in_log(client, regular_user, caplog):
 def test_unknown_reason_rejected(client, caplog):
     """The reason vocabulary is closed — anything else is a 422, so no
     client-chosen string can ever reach a log line."""
-    res = client.post(
-        URL,
-        json={"events": [{"reason": "evil\ninjected", "occurred_at": "2026-07-08T06:30:00Z"}]},
-    )
+    bad = {"reason": "evil\ninjected", "occurred_at": "2026-07-08T06:30:00Z"}
+    res = client.post(URL, json={"events": [bad]})
     assert res.status_code == 422
     assert not any("client reload" in r.getMessage() for r in caplog.records)
 
