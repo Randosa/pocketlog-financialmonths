@@ -12,6 +12,7 @@ from . import (  # noqa: F401  (re-exported for main.include_router)
     auth,
     budgets,
     categories,
+    client_log,
     goals,
     health,
     imexport,
