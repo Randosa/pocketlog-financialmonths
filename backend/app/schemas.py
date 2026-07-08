@@ -946,7 +946,10 @@ class AdminUserOut(BaseModel):
 class ReloadEventIn(BaseModel):
     # Closed enum on purpose: these values go verbatim into a server log
     # line, and the logging rules forbid user-supplied free text there.
-    reason: Literal["sw_update", "session_expired"]
+    # boot_failed is not a reload — it marks a boot whose post-login data
+    # loads died (see frontend _loadBootData) — but it rides the same
+    # breadcrumb buffer and endpoint.
+    reason: Literal["sw_update", "session_expired", "boot_failed"]
     occurred_at: datetime
 
 

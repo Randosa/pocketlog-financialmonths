@@ -226,13 +226,39 @@ async function _afterAuthSuccess(me) {
   // Deliver reload breadcrumbs from before this boot to the server log.
   // Fire-and-forget — diagnostics must not delay the first render.
   reportReloadEvents();
+  await _loadBootData(me);
+}
+
+// The post-login data loads, separated from _afterAuthSuccess so they can be
+// retried. Every loader is individually offline-tolerant (its catch keeps an
+// empty slice), so a boot against an unreachable backend used to "succeed"
+// into a silently empty app — opening the PWA while the container restarts
+// left nothing but blank views, and on iOS the frozen dead page was
+// resurrected on every reopen, so the app looked permanently broken. The
+// categories GET is the boot-failed signal: it is the keystone load (booking,
+// recurring, goals, budgets are unusable without it) and it is network-first
+// WITH a cache fallback in the SW — it only rejects when both network and
+// cache came up empty, i.e. exactly the dead-boot case. Failures land in the
+// boot-error banner (tap = retry); retryBoot also re-arms on online/visible
+// (listeners in init).
+async function _loadBootData(me) {
+  try {
+    await loadCategories({ rethrow: true });
+  } catch (e) {
+    // Not reached on a 401 — api() hard-reloads to the login view before
+    // throwing. This catch is the network/5xx path.
+    console.error('Boot data load failed:', e);
+    recordReloadEvent('boot_failed');
+    _setBootError(true);
+    return;
+  }
   await loadCategoryIconSprite();
-  await loadCategories();
   await loadTags();
   await loadGoals();
   await loadBudgets();
   await loadRecurringRules();
   await loadAndRender();
+  _setBootError(false);
   showPanel(loadDefaultView());
   updateSyncBadge();
   updateFailedNotice();
@@ -249,6 +275,26 @@ async function _afterAuthSuccess(me) {
         : tr('recurring.materializedBanner', { count: n }),
     );
   }
+}
+
+function _setBootError(failed) {
+  appState.boot.failed = failed;
+  const banner = document.getElementById('bootErrorBanner');
+  if (banner) banner.hidden = !failed;
+}
+
+// data-action of the boot-error banner; also fired by the online /
+// visibilitychange listeners in init. No-op unless a boot actually failed,
+// so the listeners cost nothing in normal operation.
+function retryBoot() {
+  if (!appState.boot.failed || appState.boot.retrying) return;
+  appState.boot.retrying = true;
+  _loadBootData(appState.admin.me).finally(() => {
+    appState.boot.retrying = false;
+    // The retry succeeded: deliver the boot_failed breadcrumb recorded by
+    // the failed attempt now instead of waiting for the next full boot.
+    if (!appState.boot.failed) reportReloadEvents();
+  });
 }
 
 // React to a language/currency switch: rebuild locale-derived month
@@ -322,6 +368,13 @@ async function init() {
       .register('/sw.js')
       .catch((e) => console.warn('SW registration failed:', e));
   }
+
+  // A boot whose data loads failed retries by itself as soon as
+  // connectivity plausibly returned; both are no-ops while boot is fine.
+  window.addEventListener('online', retryBoot);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') retryBoot();
+  });
 
   // Wait for the i18n bundle so the first render is already in the
   // active language (i18n.js kicked the load off synchronously).

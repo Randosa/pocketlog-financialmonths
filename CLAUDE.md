@@ -101,7 +101,7 @@ GET    /api/export/json              ← full-account JSON backup (ReadUser)
 POST   /api/import/json              ← restore backup; session-only, requires empty ledger (409 restore_not_empty)
 GET|POST /api/api-keys               ← session-only; POST returns raw plk_ key once
 DELETE /api/api-keys/{id}
-POST   /api/client-log/reload-events ← frontend reload breadcrumbs → server log; session-only, reason enum only
+POST   /api/client-log/reload-events ← frontend reload/boot-failure breadcrumbs → server log; session-only, reason enum only
 GET|POST /api/recurring
 PUT|DELETE /api/recurring/{id}
 POST   /api/recurring/{id}/skip-next
