@@ -223,13 +223,42 @@ async function _afterAuthSuccess(me) {
     return;
   }
   _showAuthView(null);
+  // Deliver reload breadcrumbs from before this boot to the server log.
+  // Fire-and-forget — diagnostics must not delay the first render.
+  reportReloadEvents();
+  await _loadBootData(me);
+}
+
+// The post-login data loads, separated from _afterAuthSuccess so they can be
+// retried. Every loader is individually offline-tolerant (its catch keeps an
+// empty slice), so a boot against an unreachable backend used to "succeed"
+// into a silently empty app — opening the PWA while the container restarts
+// left nothing but blank views, and on iOS the frozen dead page was
+// resurrected on every reopen, so the app looked permanently broken. The
+// categories GET is the boot-failed signal: it is the keystone load (booking,
+// recurring, goals, budgets are unusable without it) and it is network-first
+// WITH a cache fallback in the SW — it only rejects when both network and
+// cache came up empty, i.e. exactly the dead-boot case. Failures land in the
+// boot-error banner (tap = retry); retryBoot also re-arms on online/visible
+// (listeners in init).
+async function _loadBootData(me) {
+  try {
+    await loadCategories({ rethrow: true });
+  } catch (e) {
+    // Not reached on a 401 — api() hard-reloads to the login view before
+    // throwing. This catch is the network/5xx path.
+    console.error('Boot data load failed:', e);
+    recordReloadEvent('boot_failed');
+    _setBootError(true);
+    return;
+  }
   await loadCategoryIconSprite();
-  await loadCategories();
   await loadTags();
   await loadGoals();
   await loadBudgets();
   await loadRecurringRules();
   await loadAndRender();
+  _setBootError(false);
   showPanel(loadDefaultView());
   updateSyncBadge();
   updateFailedNotice();
@@ -246,6 +275,26 @@ async function _afterAuthSuccess(me) {
         : tr('recurring.materializedBanner', { count: n }),
     );
   }
+}
+
+function _setBootError(failed) {
+  appState.boot.failed = failed;
+  const banner = document.getElementById('bootErrorBanner');
+  if (banner) banner.hidden = !failed;
+}
+
+// data-action of the boot-error banner; also fired by the online /
+// visibilitychange listeners in init. No-op unless a boot actually failed,
+// so the listeners cost nothing in normal operation.
+function retryBoot() {
+  if (!appState.boot.failed || appState.boot.retrying) return;
+  appState.boot.retrying = true;
+  _loadBootData(appState.admin.me).finally(() => {
+    appState.boot.retrying = false;
+    // The retry succeeded: deliver the boot_failed breadcrumb recorded by
+    // the failed attempt now instead of waiting for the next full boot.
+    if (!appState.boot.failed) reportReloadEvents();
+  });
 }
 
 // React to a language/currency switch: rebuild locale-derived month
@@ -286,6 +335,47 @@ function _bootstrapFetch(path) {
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 async function init() {
+  if ('serviceWorker' in navigator) {
+    // Auto-reload when a new service worker takes control DURING BOOT. The
+    // shell HTML is network-first, so after an upgrade the page can boot
+    // fresh markup while still running the previous version's cached JS/i18n
+    // until a reload — exactly the half-updated state that breaks newly
+    // added reports/keys. While the boot skeleton is still up that reload is
+    // invisible; once the app has rendered it was a visible "blink" (the
+    // classic case: an update whose install outlived the previous visit and
+    // that activates seconds after the next open). So past the boot window
+    // — unless the page is hidden anyway — we skip the reload and keep the
+    // consistent old version running; the update applies on the next open,
+    // which loads fresh HTML and fresh precache in one go.
+    // Guarded against the first-ever install (no prior controller; the new
+    // SW's clients.claim() fires controllerchange there too) and reload
+    // loops. Registration is the first thing init() does so the update
+    // check races ahead of the i18n/auth awaits below and an already-waiting
+    // worker lands inside the window.
+    const SW_RELOAD_BOOT_WINDOW_MS = 3000;
+    const _swBootStart = Date.now();
+    let _swReloading = false;
+    const _hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (_swReloading || !_hadController) return;
+      const inBootWindow = Date.now() - _swBootStart < SW_RELOAD_BOOT_WINDOW_MS;
+      if (!inBootWindow && document.visibilityState !== 'hidden') return;
+      _swReloading = true;
+      recordReloadEvent('sw_update');
+      window.location.reload();
+    });
+    navigator.serviceWorker
+      .register('/sw.js')
+      .catch((e) => console.warn('SW registration failed:', e));
+  }
+
+  // A boot whose data loads failed retries by itself as soon as
+  // connectivity plausibly returned; both are no-ops while boot is fine.
+  window.addEventListener('online', retryBoot);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') retryBoot();
+  });
+
   // Wait for the i18n bundle so the first render is already in the
   // active language (i18n.js kicked the load off synchronously).
   if (window.I18N && I18N.ready) {
@@ -304,26 +394,6 @@ async function init() {
   applyTheme(loadTheme());
   syncDisplaySelects();
   applyRange({ skipRender: true });
-  if ('serviceWorker' in navigator) {
-    // Auto-reload once when a new service worker takes control. The shell HTML
-    // is network-first, so after an upgrade the page can boot fresh markup
-    // while still running the previous version's cached JS/i18n until a reload
-    // — exactly the half-updated state that breaks newly added reports/keys.
-    // Guarded against the first-ever install (no prior controller; the new
-    // SW's clients.claim() fires controllerchange there too) and reload loops.
-    let _swReloading = false;
-    const _hadController = !!navigator.serviceWorker.controller;
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (_swReloading || !_hadController) return;
-      _swReloading = true;
-      window.location.reload();
-    });
-    try {
-      await navigator.serviceWorker.register('/sw.js');
-    } catch (e) {
-      console.warn('SW registration failed:', e);
-    }
-  }
 
   // 1) Setup status: does the DB need its first admin?
   let needsSetup = false;
