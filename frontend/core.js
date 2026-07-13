@@ -270,12 +270,21 @@ function recordReloadEvent(reason) {
   } catch (_) {}
 }
 
+// Single-flight guard: reportReloadEvents can be triggered from several
+// places (boot, successful boot retry, the delayed js_error report) — two
+// overlapping runs would both read the buffer before either clears it and
+// double-log the same events. Plumbing state, not app state, hence not in
+// appState (same as window._csrfToken above).
+let _reloadEventsReportInFlight = false;
+
 async function reportReloadEvents() {
+  if (_reloadEventsReportInFlight) return;
   let events = [];
   try {
     events = JSON.parse(localStorage.getItem(RELOAD_EVENTS_KEY) || '[]');
   } catch (_) {}
   if (!Array.isArray(events) || events.length === 0) return;
+  _reloadEventsReportInFlight = true;
   try {
     const res = await authFetch(
       'POST',
@@ -290,7 +299,10 @@ async function reportReloadEvents() {
     if (res.ok || (res.status >= 400 && res.status < 500)) {
       localStorage.removeItem(RELOAD_EVENTS_KEY);
     }
-  } catch (_) {}
+  } catch (_) {
+  } finally {
+    _reloadEventsReportInFlight = false;
+  }
 }
 
 // Nuclear reset: unregister the SW AND wipe every cache. Used by the

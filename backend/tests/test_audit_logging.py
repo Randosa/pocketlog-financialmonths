@@ -394,37 +394,84 @@ def test_crlf_in_username_cannot_forge_log_line(app, caplog):
 
 def test_log_file_writes_and_rotates(tmp_path, monkeypatch):
     """LOG_FILE writes audit records to disk (in addition to stderr) and the
-    rotating handler caps file count."""
+    rotating handler caps file count. The uvicorn namespaces are captured
+    too — deploy-time failures (server start errors, tracebacks) must land
+    in the persistent file, not only in docker logs."""
     import logging.handlers as handlers_mod
 
     from app import logging_config
 
     log_path = tmp_path / "logs" / "audit.log"
     monkeypatch.setenv("LOG_FILE", str(log_path))
-    monkeypatch.setenv("LOG_FILE_MAX_BYTES", "200")
+    monkeypatch.setenv("LOG_FILE_MAX_BYTES", "20000")
     monkeypatch.setenv("LOG_FILE_BACKUPS", "2")
 
-    plog = logging.getLogger("pocketlog")
-    added = [h for h in plog.handlers]
+    loggers = [logging.getLogger(n) for n in logging_config._FILE_LOGGED_NAMESPACES]
+    before = {lg.name: list(lg.handlers) for lg in loggers}
     try:
         logging_config._attach_file_handler(logging.INFO)
+        plog = logging.getLogger("pocketlog")
         file_handlers = [
             h for h in plog.handlers if isinstance(h, handlers_mod.RotatingFileHandler)
         ]
         assert file_handlers, "expected a RotatingFileHandler on pocketlog"
         fh = file_handlers[-1]
         assert fh.backupCount == 2
-        assert fh.maxBytes == 200
+        assert fh.maxBytes == 20000
+        for lg in loggers:
+            assert fh in lg.handlers, f"file handler missing on {lg.name}"
 
-        # Parent directory was created and a record lands in the file.
+        # Parent directory was created and records land in the file — from
+        # the audit namespace AND from uvicorn (uvicorn.error propagate=False,
+        # so this only works because the handler sits on the logger itself).
+        # The short-name filter applies to the file too: "uvicorn", not
+        # "uvicorn.error".
         logging.getLogger("pocketlog.audit").info("test.event id=1 ip=x")
+        uv_error = logging.getLogger("uvicorn.error")
+        # Collection-order fileConfig artifact, see test_client_log.
+        uv_error.disabled = False
+        uv_error.error("test.uvicorn.crash")
         fh.flush()
         assert log_path.exists()
-        assert "test.event" in log_path.read_text(encoding="utf-8")
+        content = log_path.read_text(encoding="utf-8")
+        assert "test.event" in content
+        assert "test.uvicorn.crash" in content
+        assert "ERROR uvicorn test.uvicorn.crash" in content
     finally:
         # Remove only the handler(s) we added, restore prior state.
-        for h in [h for h in plog.handlers if h not in added]:
-            plog.removeHandler(h)
+        for lg in loggers:
+            for h in [h for h in lg.handlers if h not in before[lg.name]]:
+                lg.removeHandler(h)
+                h.close()
+
+
+def test_log_file_captures_migration_process(tmp_path, monkeypatch):
+    """attach_migration_file_handler mirrors LOG_FILE onto the root logger of
+    the (separate) alembic process, so failing migrations reach the
+    persistent file too."""
+    from app import logging_config
+
+    log_path = tmp_path / "logs" / "migrate.log"
+    monkeypatch.setenv("LOG_FILE", str(log_path))
+
+    root = logging.getLogger()
+    before = list(root.handlers)
+    try:
+        logging_config.attach_migration_file_handler()
+        added = [h for h in root.handlers if h not in before]
+        assert added, "expected a file handler on the root logger"
+        alembic_logger = logging.getLogger("alembic.runtime.migration")
+        alembic_logger.disabled = False
+        alembic_logger.error("test.migration.failure")
+        for h in added:
+            h.flush()
+        content = log_path.read_text(encoding="utf-8")
+        assert "test.migration.failure" in content
+        # Short display name in the file as well.
+        assert "ERROR alembic test.migration.failure" in content
+    finally:
+        for h in [h for h in root.handlers if h not in before]:
+            root.removeHandler(h)
             h.close()
 
 
