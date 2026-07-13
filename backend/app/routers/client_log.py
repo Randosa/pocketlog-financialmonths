@@ -2,8 +2,10 @@
 
 The frontend reloads itself automatically in two situations (service-worker
 update takeover, expired session on a 401) — both look like an unexplained
-"blink" to the user. A third breadcrumb, ``boot_failed``, marks a boot whose
-post-login data loads died (backend restarting, dead network). The browser
+"blink" to the user. Two more breadcrumbs cover silent failures:
+``boot_failed`` marks a boot whose post-login data loads died (backend
+restarting, dead network), ``js_error`` an uncaught client-side error (the
+message and stack deliberately never leave the browser console). The browser
 cannot write to the server log directly and the page's memory dies with a
 reload, so the frontend parks a breadcrumb in localStorage and delivers it
 here on its next authenticated boot (core.js ``reportReloadEvents``). This

@@ -47,17 +47,19 @@ def test_events_land_in_log(client, regular_user, caplog):
                 EVENT,
                 {"reason": "session_expired", "occurred_at": "2026-07-08T07:00:00Z"},
                 {"reason": "boot_failed", "occurred_at": "2026-07-08T07:30:00Z"},
+                {"reason": "js_error", "occurred_at": "2026-07-08T08:00:00Z"},
             ]
         },
     )
     assert res.status_code == 204
     messages = (r.getMessage() for r in caplog.records)
     lines = [m for m in messages if "client event" in m]
-    assert len(lines) == 3
+    assert len(lines) == 4
     assert f"user_id={regular_user.id} reason=sw_update" in lines[0]
     assert "occurred_at=2026-07-08T06:30:00+00:00" in lines[0]
     assert f"user_id={regular_user.id} reason=session_expired" in lines[1]
     assert f"user_id={regular_user.id} reason=boot_failed" in lines[2]
+    assert f"user_id={regular_user.id} reason=js_error" in lines[3]
 
 
 def test_unknown_reason_rejected(client, caplog):

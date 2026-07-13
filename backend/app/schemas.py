@@ -946,10 +946,11 @@ class AdminUserOut(BaseModel):
 class ReloadEventIn(BaseModel):
     # Closed enum on purpose: these values go verbatim into a server log
     # line, and the logging rules forbid user-supplied free text there.
-    # boot_failed is not a reload — it marks a boot whose post-login data
-    # loads died (see frontend _loadBootData) — but it rides the same
-    # breadcrumb buffer and endpoint.
-    reason: Literal["sw_update", "session_expired", "boot_failed"]
+    # boot_failed marks a boot whose post-login data loads died (frontend
+    # _loadBootData); js_error marks an uncaught client-side error (message
+    # and stack deliberately stay in the browser console). Neither is a
+    # reload, but both ride the same breadcrumb buffer and endpoint.
+    reason: Literal["sw_update", "session_expired", "boot_failed", "js_error"]
     occurred_at: datetime
 
 

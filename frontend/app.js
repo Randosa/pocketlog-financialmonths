@@ -6,13 +6,20 @@
 // Without this, a bug anywhere in the app (a thrown error, a rejected
 // promise nobody awaited) failed silently — nothing but a console line the
 // user never sees, leaving them stuck on a dead view with no explanation.
-// This only makes failures visible locally; no data leaves the device (no
-// tracking, per project privacy policy).
+// The toast makes the failure visible locally; the js_error breadcrumb makes
+// it visible to the operator: an enum-only "an uncaught error happened at
+// time X" in the server log — never the message or stack, those stay in the
+// console (no free text reaches logs, and nothing leaves the user's own
+// origin, per project privacy policy).
 let _lastGlobalErrorToastAt = 0;
 function _surfaceUnexpectedError() {
   const now = Date.now();
   if (now - _lastGlobalErrorToastAt < 4000) return; // one toast per burst
   _lastGlobalErrorToastAt = now;
+  recordReloadEvent('js_error');
+  // Deliver soon when a session exists (delayed so an error burst coalesces
+  // into one report); otherwise the breadcrumb rides along on the next boot.
+  if (window._csrfToken) setTimeout(reportReloadEvents, 1000);
   toast(tr('common.actionFailed'), 'error');
 }
 window.addEventListener('error', (event) => {
