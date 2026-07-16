@@ -1,6 +1,8 @@
 {
   "app": {
-    "documentTitle": "PocketLog – Haushaltsbuch"
+    "documentTitle": "PocketLog – Haushaltsbuch",
+    "bootFailed": "Daten konnten nicht geladen werden.",
+    "bootRetry": "Erneut versuchen"
   },
   "common": {
     "save": "Speichern",

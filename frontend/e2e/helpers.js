@@ -77,7 +77,13 @@ async function expectNoRawKeys(page, where) {
 // writes. The FAB reports visible even behind the auth overlay (toBeVisible
 // ignores occlusion), so it proves nothing; and window._csrfToken is only
 // populated once /api/auth/me returns — a non-GET fired before that goes out
-// without the CSRF header and gets a 403.
+// without the CSRF header and gets a 403. The token alone is not enough
+// either: it is set BEFORE _afterAuthSuccess loads the domain data, and
+// helpers like openRecurringModal silently no-op while
+// appState.ledger.categories is still empty. On a slow runner the service
+// worker's install precache competes with those boot loads, so also wait for
+// the categories (every bootIntoApp caller uses the suite account, which has
+// the setup-seeded default categories).
 async function bootIntoApp(page) {
   await page.goto('/');
   await expect(page.locator('#setupView')).toBeHidden();
@@ -85,7 +91,10 @@ async function bootIntoApp(page) {
   // Polled via evaluate + toPass: waitForFunction needs eval, which the
   // app's CSP (script-src 'self') forbids.
   await expect(async () => {
-    expect(await page.evaluate(() => window._csrfToken)).toBeTruthy();
+    const ready = await page.evaluate(
+      () => !!window._csrfToken && appState.ledger.categories.length > 0,
+    );
+    expect(ready).toBeTruthy();
   }).toPass({ timeout: 15000, intervals: [100, 250, 500] });
 }
 

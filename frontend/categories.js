@@ -4,10 +4,13 @@
 // ── CATEGORIES ────────────────────────────────────────────────────────────────
 const CAT_CREATE_COLORS = ['#D97757', '#6b7aa1', '#788C5D', '#c47ab0', '#e0a44a', '#87867F'];
 
-async function loadCategories() {
+async function loadCategories(opts = {}) {
   try {
     appState.ledger.categories = await api('GET', '/categories');
   } catch (e) {
+    // Boot uses rethrow to detect the dead-boot case (app.js _loadBootData);
+    // every other caller keeps the offline-tolerant empty fallback.
+    if (opts.rethrow) throw e;
     appState.ledger.categories = [];
   }
 }

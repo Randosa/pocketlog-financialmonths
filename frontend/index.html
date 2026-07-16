@@ -949,6 +949,15 @@
       </div>
     </div>
 
+    <!-- Boot-error banner: the post-login data loads failed (backend
+         restarting, dead network) and the views below are empty. The whole
+         bar retries; retryBoot also re-arms on online/visible (app.js).
+         Toggled by _setBootError(). Reuses the sync-banner styling. -->
+    <button class="sync-banner" id="bootErrorBanner" data-action="retryBoot" hidden>
+      <span class="sync-banner-text" data-i18n="app.bootFailed">Daten konnten nicht geladen werden.</span>
+      <span class="sync-banner-action" data-i18n="app.bootRetry">Erneut versuchen</span>
+    </button>
+
     <!-- Dead-letter banner: surfaces writes the server rejected on replay.
          A tap opens the recovery sheet (retry / discard). Toggled by
          updateFailedNotice(). -->

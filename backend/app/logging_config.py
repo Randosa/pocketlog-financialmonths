@@ -17,6 +17,9 @@ Env:
                                 _JsonFormatter; invalid → text)
     LOG_FILE              unset → file logging off. A path → ALSO write logs
                           there (in addition to stderr), via a rotating handler.
+                          Captures pocketlog.* AND the uvicorn namespaces, plus
+                          the alembic migration process (which attaches the same
+                          handler itself — see attach_migration_file_handler).
                           Mount a volume at its directory to persist logs across
                           container updates (docker logs survives restarts but
                           not `docker rm`).
@@ -150,14 +153,13 @@ def _resolve_int(name: str, default: int) -> int:
     return default
 
 
-def _attach_file_handler(level: int, fmt: str = "text") -> None:
-    """If LOG_FILE is set, ALSO write to a rotating file in the chosen format.
-    Best-effort: a bad path / permissions must never crash the app — we warn
-    and keep stderr. Done programmatically (not in dictConfig) so a file open
-    error is catchable."""
+def _build_file_handler(fmt: str) -> logging.Handler | None:
+    """Build the LOG_FILE rotating handler, or None when LOG_FILE is unset or
+    unusable. Best-effort: a bad path / permissions must never crash the
+    caller — we warn and keep stderr."""
     path = (os.environ.get("LOG_FILE") or "").strip()
     if not path:
-        return
+        return None
     try:
         directory = os.path.dirname(path)
         if directory:
@@ -169,13 +171,53 @@ def _attach_file_handler(level: int, fmt: str = "text") -> None:
             encoding="utf-8",
         )
         handler.setFormatter(_build_formatter(fmt))
-        logging.getLogger("pocketlog").addHandler(handler)
+        # Same display names as on stderr (uvicorn.error → uvicorn, …).
+        install_short_logger_names(handler)
         _bootstrap.info("File logging enabled at %s", path)
+        return handler
     except OSError as exc:
         # Permissions, missing mount, read-only fs … log to stderr and move on.
         _bootstrap.warning(
             "Could not open LOG_FILE=%r (%s) — file logging off", path, exc
         )
+        return None
+
+
+# The dictConfig loggers all set propagate=False, so the file handler must be
+# attached to every namespace it should capture. "pocketlog" alone left the
+# file blind to uvicorn's records (server start/stop, port errors, tracebacks
+# from the server layer) — exactly the deploy-time failures an operator wants
+# in the persistent log, because docker logs don't survive the `docker rm`
+# of an image update. uvicorn.access stays pinned to WARNING at the logger
+# level, so no per-request lines reach the file either.
+_FILE_LOGGED_NAMESPACES = ("pocketlog", "uvicorn", "uvicorn.error", "uvicorn.access")
+
+
+def _attach_file_handler(level: int, fmt: str = "text") -> None:
+    """If LOG_FILE is set, ALSO write to a rotating file in the chosen format
+    (in addition to stderr). Done programmatically (not in dictConfig) so a
+    file open error is catchable."""
+    handler = _build_file_handler(fmt)
+    if handler is None:
+        return
+    for name in _FILE_LOGGED_NAMESPACES:
+        logging.getLogger(name).addHandler(handler)
+
+
+def attach_migration_file_handler() -> None:
+    """Mirror the LOG_FILE handler in the alembic migration process.
+
+    Migrations run as their own process (``alembic upgrade head`` in the
+    container CMD) configured by alembic.ini's fileConfig — configure_logging
+    never runs there. Attached to the root logger, so the alembic and
+    sqlalchemy records land in the same rotating file as the app's; without
+    this, a failing migration was only visible in ``docker logs``, which the
+    very image update that triggered the migration tends to throw away.
+    Called from migrations/env.py.
+    """
+    handler = _build_file_handler(_resolve_format())
+    if handler is not None:
+        logging.getLogger().addHandler(handler)
 
 
 def configure_logging() -> None:

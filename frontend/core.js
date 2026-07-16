@@ -249,6 +249,62 @@ function _resetAuthClientState() {
   window._csrfToken = '';
 }
 
+// ── BOOT/RELOAD DIAGNOSTICS ───────────────────────────────────────────────────
+// Every automatic location.reload() — and a boot whose data loads died
+// (app.js _loadBootData) — records WHY it happened, so the cause shows up in
+// the server log (docker logs / LOG_FILE) instead of vanishing with the
+// page. The browser can't write to the server log directly and the page's
+// memory dies with a reload, so the reason is parked in localStorage only as
+// a hand-over buffer: the next authenticated boot delivers it to
+// POST /api/client-log/reload-events and clears the buffer. Reasons are a
+// closed enum validated by the backend — no free text ends up in log lines.
+// Everything here is fail-safe: diagnostics must never break the app.
+const RELOAD_EVENTS_KEY = 'pocketlog.reloadEvents';
+const RELOAD_EVENTS_MAX = 20; // keep in sync with backend schemas.ReloadEventsIn
+
+function recordReloadEvent(reason) {
+  try {
+    const list = JSON.parse(localStorage.getItem(RELOAD_EVENTS_KEY) || '[]');
+    list.push({ reason, occurred_at: new Date().toISOString() });
+    localStorage.setItem(RELOAD_EVENTS_KEY, JSON.stringify(list.slice(-RELOAD_EVENTS_MAX)));
+  } catch (_) {}
+}
+
+// Single-flight guard: reportReloadEvents can be triggered from several
+// places (boot, successful boot retry, the delayed js_error report) — two
+// overlapping runs would both read the buffer before either clears it and
+// double-log the same events. Plumbing state, not app state, hence not in
+// appState (same as window._csrfToken above).
+let _reloadEventsReportInFlight = false;
+
+async function reportReloadEvents() {
+  if (_reloadEventsReportInFlight) return;
+  let events = [];
+  try {
+    events = JSON.parse(localStorage.getItem(RELOAD_EVENTS_KEY) || '[]');
+  } catch (_) {}
+  if (!Array.isArray(events) || events.length === 0) return;
+  _reloadEventsReportInFlight = true;
+  try {
+    const res = await authFetch(
+      'POST',
+      '/client-log/reload-events',
+      { events: events.slice(-RELOAD_EVENTS_MAX) },
+      { reloadOn401: false },
+    );
+    // Clear only after the server accepted them; an offline boot keeps the
+    // buffer and the next boot retries. A 4xx (e.g. a stale entry with a
+    // reason the backend no longer knows) is dropped too — retrying would
+    // fail forever.
+    if (res.ok || (res.status >= 400 && res.status < 500)) {
+      localStorage.removeItem(RELOAD_EVENTS_KEY);
+    }
+  } catch (_) {
+  } finally {
+    _reloadEventsReportInFlight = false;
+  }
+}
+
 // Nuclear reset: unregister the SW AND wipe every cache. Used by the
 // force-change path as an escape hatch when the server response proves
 // that the view currently rendered doesn't match the real session
@@ -332,6 +388,7 @@ async function api(method, path, body) {
   if (res.status === 401) {
     if (!window._suppressAuthReload) {
       _resetAuthClientState();
+      recordReloadEvent('session_expired');
       location.reload();
     }
     throw new Error('session expired');
@@ -372,6 +429,7 @@ async function authFetch(method, path, body, opts = {}) {
   const res = await fetch(API + path, init);
   if (res.status === 401 && opts.reloadOn401 !== false) {
     _resetAuthClientState();
+    recordReloadEvent('session_expired');
     location.reload();
   }
   return res;

@@ -941,3 +941,20 @@ class AdminUserOut(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ReloadEventIn(BaseModel):
+    # Closed enum on purpose: these values go verbatim into a server log
+    # line, and the logging rules forbid user-supplied free text there.
+    # boot_failed marks a boot whose post-login data loads died (frontend
+    # _loadBootData); js_error marks an uncaught client-side error (message
+    # and stack deliberately stay in the browser console). Neither is a
+    # reload, but both ride the same breadcrumb buffer and endpoint.
+    reason: Literal["sw_update", "session_expired", "boot_failed", "js_error"]
+    occurred_at: datetime
+
+
+class ReloadEventsIn(BaseModel):
+    # Matches the frontend's localStorage buffer cap (core.js
+    # RELOAD_EVENTS_MAX) — one boot never delivers more than this.
+    events: list[ReloadEventIn] = Field(min_length=1, max_length=20)
