@@ -1133,6 +1133,11 @@ async function renderReportTrend(body, txs) {
     .join('');
   const searchPlaceholder =
     appState.trend.kind === 'category' ? tr('reports.searchCategory') : tr('reports.searchTag');
+  // Empty-state copy for .tag-picker-chips:empty::after, which reads data-empty.
+  const emptyLabel =
+    appState.trend.kind === 'category'
+      ? tr('reports.searchNoneCategory')
+      : tr('reports.searchNoneTag');
 
   const segmentedMarkup = `<div class="segmented" role="tablist" aria-label="${_escAttr(tr('reports.trendSelect'))}">
             <button type="button" role="tab" aria-selected="${appState.trend.kind === 'category'}" class="${appState.trend.kind === 'category' ? 'is-active' : ''}" data-action="setTrendKind" data-args='["category"]'>${tr('reports.kindCategories')}</button>
@@ -1157,7 +1162,7 @@ async function renderReportTrend(body, txs) {
               <svg class="ui-icon" aria-hidden="true"><use href="#icon-search" /></svg>
               <input type="search" placeholder="${searchPlaceholder}" value="${_escAttr(appState.trend.pickerFilter)}" data-action-input="filterTrendChips" data-args='["@value"]' autocomplete="off" />
             </div>
-            <div class="tag-picker-chips" id="trendPickerChips">${chipsMarkup}</div>
+            <div class="tag-picker-chips" id="trendPickerChips" data-empty="${_escAttr(emptyLabel)}">${chipsMarkup}</div>
           </div>`;
 
   if (!selected) {
