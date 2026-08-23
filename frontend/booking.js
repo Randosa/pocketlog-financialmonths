@@ -43,19 +43,79 @@ function openModal(tx) {
   if (lblAmount)
     lblAmount.textContent = tr('tx.amount', { symbol: window.I18N ? I18N.currencySymbol() : '€' });
   document.getElementById('inputAmount').placeholder = _formatAmountInput(0);
+  clearBookingFieldErrors();
   document.getElementById('deleteBtn').style.display = tx ? 'block' : 'none';
   document.getElementById('modalOverlay').classList.add('open');
   appState.nav.bookingModalOpenedAt = Date.now();
   document.body.style.overflow = 'hidden';
   setTimeout(() => document.getElementById('inputAmount').focus(), 300);
   document.getElementById('modalOverlay').dataset.editId = tx?.id || '';
+  // Baseline for the unsaved-changes check in closeModal.
+  appState.form.pristine = _bookingFormSnapshot();
   trapFocusIn(document.querySelector('#modalOverlay .modal'), 'booking');
 }
-function closeModal() {
+
+// Serialised form state, compared against the snapshot taken at open to tell
+// a discarded draft from an untouched modal.
+function _bookingFormSnapshot() {
+  return JSON.stringify({
+    amount: document.getElementById('inputAmount').value.trim(),
+    desc: document.getElementById('inputDesc').value.trim(),
+    date: document.getElementById('inputDate').value,
+    cat: document.getElementById('inputCat').value,
+    type: appState.form.type,
+    tags: [...appState.form.tags].sort(),
+  });
+}
+function _bookingFormIsDirty() {
+  return appState.form.pristine != null && _bookingFormSnapshot() !== appState.form.pristine;
+}
+
+// Closing discards the draft, so an edited form asks first — the X, the
+// backdrop and Escape all land here. Internal callers that close *after*
+// persisting (save, delete, offline enqueue) pass force:true; without it they
+// would prompt about changes they just wrote.
+async function closeModal({ force = false } = {}) {
+  if (!force && _bookingFormIsDirty()) {
+    const discard = await confirmAction({
+      title: tr('tx.discardTitle'),
+      message: tr('tx.discardMessage'),
+      confirmLabel: tr('tx.discardConfirm'),
+      cancelLabel: tr('tx.keepEditing'),
+      destructive: true,
+    });
+    if (!discard) return;
+  }
+  appState.form.pristine = null;
   document.getElementById('modalOverlay').classList.remove('open');
   document.body.style.overflow = '';
   releaseFocusTrap('booking');
   restoreModalFocus('booking');
+}
+
+// ---- Field-level validation (label -> input -> message under the field) ----
+const _BOOKING_ERROR_SLOTS = {
+  inputAmount: 'errAmount',
+  inputDate: 'errDate',
+  inputCat: 'errCat',
+};
+
+function _setBookingFieldError(fieldId, msg) {
+  const field = document.getElementById(fieldId);
+  const slot = document.getElementById(_BOOKING_ERROR_SLOTS[fieldId]);
+  if (!field || !slot) return;
+  field.classList.toggle('is-invalid', !!msg);
+  slot.textContent = msg || '';
+  slot.hidden = !msg;
+}
+
+function clearBookingFieldErrors() {
+  Object.keys(_BOOKING_ERROR_SLOTS).forEach((id) => _setBookingFieldError(id, ''));
+}
+
+// Bound on input/change so a correction clears its own message immediately.
+function clearBookingFieldError(fieldId) {
+  _setBookingFieldError(fieldId, '');
 }
 // Backdrop dismiss shared by every modal overlay. The delegation engine
 // (core.js) binds `this` to the overlay carrying the data-action attribute —
@@ -112,15 +172,16 @@ async function deleteCurrentTransaction() {
     return;
   try {
     await api('DELETE', `/transactions/${editId}`);
-    closeModal();
+    await closeModal({ force: true });
     await loadAndRender();
   } catch (e) {
     if (await _enqueueOfflineDelete(editId, e)) {
-      closeModal();
+      await closeModal({ force: true });
       updateSyncBadge();
       return;
     }
-    toast(tr('tx.deleteFailed') + e.message, 'error');
+    console.warn('delete failed', e);
+    toast(e.status >= 500 ? tr('tx.deleteServerError') : tr('tx.deleteFailed'), 'error');
   }
 }
 
@@ -177,8 +238,18 @@ async function addTransaction() {
   const desc = document.getElementById('inputDesc').value.trim();
   const cat = parseInt(document.getElementById('inputCat').value);
   const date = document.getElementById('inputDate').value;
-  if (!amount || !date) {
-    toast(tr('tx.amountDateRequired'), 'error');
+  // Errors go under their field, not into a toast that names neither.
+  // category_id is required by the API, so it is checked here too — it used
+  // to reach the server as null and come back as an unreadable 422.
+  clearBookingFieldErrors();
+  const invalid = [
+    !amount && ['inputAmount', tr('tx.errAmount')],
+    !date && ['inputDate', tr('tx.errDate')],
+    !cat && ['inputCat', tr('tx.errCategory')],
+  ].filter(Boolean);
+  if (invalid.length) {
+    invalid.forEach(([field, msg]) => _setBookingFieldError(field, msg));
+    document.getElementById(invalid[0][0]).focus();
     return;
   }
   const body = {
@@ -199,7 +270,7 @@ async function addTransaction() {
   try {
     const result = await api(method, path, body);
     mergeIntoAvailableTags(appState.form.tags);
-    closeModal();
+    await closeModal({ force: true });
     if (result && result.queued) {
       // Offline: the service worker queued the write (HTTP 202) instead of
       // reaching the server. Reloading now would pull the stale API cache and
@@ -213,6 +284,10 @@ async function addTransaction() {
       return;
     }
     await Promise.all([loadAndRender(), loadTags()]);
+    // The new row is not proof on its own — a booking dated outside the
+    // displayed period leaves the list untouched, and the save then looks
+    // exactly like a dismissal.
+    toast(tr(editId ? 'tx.updated' : 'tx.saved'));
   } catch (e) {
     if (_isOfflineWriteError(e) && window.PocketLogOutbox) {
       // Network-level failure (offline, or the write timed out and aborted)
@@ -222,13 +297,23 @@ async function addTransaction() {
       await window.PocketLogOutbox.enqueue({ method, path, body });
       mergeIntoAvailableTags(appState.form.tags);
       _applyTxLocally(method, editId, body);
-      closeModal();
+      await closeModal({ force: true });
       renderAll();
       updateSyncBadge();
       toast(tr('tx.queuedOffline'));
       return;
     }
-    toast(tr('tx.saveFailed') + e.message, 'error');
+    // The raw message is `API POST /transactions → 422` — useful in the
+    // console, useless in a toast.
+    console.warn('save failed', e);
+    toast(
+      e.status === 422
+        ? tr('tx.saveInvalid')
+        : e.status >= 500
+          ? tr('tx.saveServerError')
+          : tr('tx.saveFailed'),
+      'error',
+    );
   }
 }
 

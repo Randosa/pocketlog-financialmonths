@@ -36,10 +36,13 @@ const appState = {
   // `suggestions` is the tag-suggestion row, frozen when the modal opens:
   // adding a tag greys its chip in place instead of dropping it from the
   // list, so the row never reflows under the user's finger mid-tap.
+  // `pristine` is the serialised form state at open — closeModal compares
+  // against it to ask before discarding a draft. Null while no modal is up.
   form: {
     type: 'out',
     tags: [],
     suggestions: [],
+    pristine: null,
   },
 
   // Reports view. `current` is the active report id (restored from

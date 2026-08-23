@@ -2032,6 +2032,18 @@
       .form-group {
         margin-bottom: var(--space-16);
       }
+      /* Inline validation message under a field (label -> input -> error),
+         the pattern .auth-error already uses in the auth views. Hidden until
+         a submit marks the field; cleared again on the next edit. */
+      .field-error {
+        margin: var(--space-4) 0 0;
+        font-size: var(--fs-footnote);
+        color: var(--red);
+        line-height: 1.4;
+      }
+      .form-group :is(input, select).is-invalid {
+        border-color: var(--red);
+      }
       .form-group label {
         display: block;
         font-size: var(--fs-caption);
@@ -2171,15 +2183,23 @@
         display: flex;
         align-items: center;
         gap: var(--space-4);
+        /* Pinned so the pill keeps its size independently of the remove
+           button, whose box is pulled back by a negative margin below. */
+        min-height: calc(2 * var(--space-16));
       }
+      /* The glyph is ~14px, the touch target must be 44px (DESIGN_CONVENTIONS
+         "Touch targets"). Conventions call for padding rather than a sized
+         transparent box, so the padding does the work and the equal negative
+         margin keeps the pill itself at its old size — the hit area reaches
+         into the surrounding gap without displacing anything. */
       .tag-pill button {
         background: none;
         border: none;
         cursor: pointer;
         color: var(--text3);
         font-size: var(--fs-footnote);
-        padding: var(--space-8);
-        margin: calc(-1 * var(--space-8));
+        padding: var(--space-16);
+        margin: calc(-1 * var(--space-16));
         line-height: 1;
       }
       .tag-pill button:focus-visible {
