@@ -1165,16 +1165,30 @@
               pattern="[0-9]*[.,]?[0-9]{0,2}"
               autocomplete="off"
               enterkeyhint="done"
+              aria-describedby="errAmount"
               data-action-blur="normalizeAmountInput"
+              data-action-input="clearBookingFieldError" data-args='["inputAmount"]'
             />
+            <p class="field-error" id="errAmount" role="alert" hidden></p>
           </div>
           <div class="form-group">
             <label data-i18n="tx.date">Datum</label>
-            <input type="date" id="inputDate" />
+            <input
+              type="date"
+              id="inputDate"
+              aria-describedby="errDate"
+              data-action-change="clearBookingFieldError" data-args='["inputDate"]'
+            />
+            <p class="field-error" id="errDate" role="alert" hidden></p>
           </div>
           <div class="form-group">
             <label data-i18n="tx.category">Kategorie</label>
-            <select id="inputCat"></select>
+            <select
+              id="inputCat"
+              aria-describedby="errCat"
+              data-action-change="clearBookingFieldError" data-args='["inputCat"]'
+            ></select>
+            <p class="field-error" id="errCat" role="alert" hidden></p>
           </div>
           <div class="form-group">
             <label data-i18n="tx.notes">Notizen</label>
@@ -1182,7 +1196,7 @@
           </div>
           <div class="form-group">
             <label data-i18n="tx.tags">Tags</label>
-            <div class="tags-input-wrap" id="tagsWrap">
+            <div class="tags-input-wrap" id="tagsWrap" aria-live="polite">
               <button
                 type="button"
                 class="tag-add-btn"
@@ -1276,7 +1290,7 @@
               </button>
             </div>
           </div>
-          <div class="form-group">
+          <div class="form-group" id="tagPickerExistingGroup">
             <label data-i18n="tags.existing">Vorhandene Tags</label>
             <div class="search-wrap tag-picker-search">
               <span class="search-icon" aria-hidden="true">

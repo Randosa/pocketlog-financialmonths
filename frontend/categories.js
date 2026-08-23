@@ -67,6 +67,12 @@ function renderTagSuggestions() {
   // needs spelling out for screen readers. An already-added chip stays in
   // place, greyed and disabled: it holds the layout and turns a stray second
   // tap into a no-op instead of adding a tag the user never aimed at.
+  // Replacing innerHTML drops the focused chip, and the one that replaces it
+  // is disabled, so keyboard focus fell out of the row on every add. The row
+  // is frozen, so the slot index is stable — restore focus there.
+  const focused = box.contains(document.activeElement)
+    ? [...box.children].indexOf(document.activeElement)
+    : -1;
   box.innerHTML = appState.form.suggestions
     .map((t) => {
       const added = selected.has(t.toLowerCase());
@@ -77,6 +83,18 @@ function renderTagSuggestions() {
   box.querySelectorAll('[data-add-tag]').forEach((el) => {
     el.addEventListener('click', () => addTagFromSuggestion(el.dataset.addTag));
   });
+  if (focused >= 0) {
+    const chips = [...box.children];
+    // The chip just used is disabled now — move on to the next one that is
+    // still addable, falling back to the last enabled chip before it.
+    const next =
+      chips.slice(focused).find((el) => !el.disabled) ||
+      chips
+        .slice(0, focused)
+        .reverse()
+        .find((el) => !el.disabled);
+    next?.focus();
+  }
 }
 
 function addTagFromSuggestion(t) {
@@ -132,6 +150,14 @@ function openTagPickerFor(context) {
   const isRemove = context === 'bulkRemove';
   const newGroup = document.getElementById('tagPickerNewGroup');
   if (newGroup) newGroup.style.display = isRemove ? 'none' : '';
+  // Nothing to search through yet: hide the whole "existing tags" block
+  // rather than offering a search field over zero rows and answering it with
+  // "no tags found". Creating one is the only thing to do here.
+  const existingGroup = document.getElementById('tagPickerExistingGroup');
+  if (existingGroup) {
+    const pool = isRemove ? appState.tagPicker.bulkRemovePool : appState.ledger.availableTags;
+    existingGroup.style.display = (pool || []).length === 0 ? 'none' : '';
+  }
   const title = document.getElementById('tagPickerTitle');
   if (title)
     title.textContent =

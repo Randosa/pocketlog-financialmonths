@@ -17,6 +17,10 @@
 
 > Checkboxes to tick off while working through this. Order follows priority (critical → polish).
 
+**Status 2026-08-23:** findings 1–8 (all critical and important) are implemented and verified
+against a running instance. Finding 9 came along with 7 — it is a single `aria-live` attribute
+and the two only work together. Findings 10 and 11 are still open.
+
 Written in English per `CLAUDE.md` → Conventions → Language, which covers docs.
 
 ---
@@ -68,7 +72,7 @@ Verified against a running instance (Pixel 5 viewport, de-DE, light + dark).
 
 ## Critical
 
-### [ ] 1. Saving gives no feedback when the booking lands outside the displayed period
+### [x] 1. Saving gives no feedback when the booking lands outside the displayed period
 
 **Where:** `frontend/booking.js:199–215` (`addTransaction`, success path)
 
@@ -84,7 +88,7 @@ toast(tr('tx.saved')); // new key, e.g. "Buchung gespeichert."
 
 Worth deciding alongside: should the ledger jump to the saved booking's month? A toast is the minimum; jumping makes the result verifiable. Jumping alone is not enough — it silently moves the user somewhere they did not ask to be.
 
-### [ ] 2. The form is discarded without warning
+### [x] 2. The form is discarded without warning
 
 **Where:** `frontend/booking.js:54–58` (`closeModal`), `:78–82` (`closeModalOutside`)
 
@@ -105,7 +109,7 @@ function closeModal({ force = false } = {}) {
 
 `_bookingFormIsDirty()` compares amount/notes/tags against the state at open, so the common "opened by mistake, closed straight away" case stays a single tap. There is a 400 ms backdrop guard already (`bookingModalOpenedAt`) — the dirty check is the complement for the other end of the interaction.
 
-### [ ] 3. Error toasts carry the raw HTTP code
+### [x] 3. Error toasts carry the raw HTTP code
 
 **Where:** `frontend/booking.js:231`, `:125`; keys `tx.saveFailed`, `tx.deleteFailed` in both bundles
 
@@ -134,7 +138,7 @@ This also affects the `tx.saveFailed` / `tx.deleteFailed` keys, which currently 
 
 ## Important
 
-### [ ] 4. The tag pill's remove button is 30 × 31 px
+### [x] 4. The tag pill's remove button is 30 × 31 px
 
 **Where:** `frontend/styles.css` → `.tag-pill button`; measured in the running app
 
@@ -153,7 +157,7 @@ The rule already tries to compensate with `padding: var(--space-8); margin: calc
 
 The pill's own height must stay put — check the row does not grow.
 
-### [ ] 5. Category is mandatory in the backend but not validated in the client
+### [x] 5. Category is mandatory in the backend but not validated in the client
 
 **Where:** `frontend/booking.js:176–191`, `backend/app/schemas.py` → `TransactionBase.category_id: int`
 
@@ -161,7 +165,7 @@ The client validates only amount and date (`if (!amount || !date)`) and sends `c
 
 Either validate before sending, with the same toast the other two fields get, or better: put the message under the field (finding 8) and disable the save button while the select is empty.
 
-### [ ] 6. Wrong empty state in the tag picker for a user with no tags
+### [x] 6. Wrong empty state in the tag picker for a user with no tags
 
 **Where:** `frontend/index.html:1303` (`#tagPickerChips`), key `tags.searchNone`
 
@@ -169,7 +173,7 @@ Verified with a freshly created account: the picker shows the "Vorhandene Tags" 
 
 Beyond the wording, the whole section is noise in that state: a search field over zero items. When `appState.ledger.availableTags.length === 0`, hide the "Vorhandene Tags" group entirely and let "Neuen Tag anlegen" stand alone — that is the only action available anyway. Keep `tags.searchNone` for the genuine no-match case.
 
-### [ ] 7. Keyboard focus leaves the suggestion row on every add
+### [x] 7. Keyboard focus leaves the suggestion row on every add
 
 **Where:** `frontend/categories.js` → `renderTagSuggestions` (`box.innerHTML = …`)
 
@@ -185,7 +189,7 @@ const next = [...box.children].find((el, n) => n >= i && !el.disabled) || box.ch
 next?.focus();
 ```
 
-### [ ] 8. Validation errors appear as a toast, not under the field
+### [x] 8. Validation errors appear as a toast, not under the field
 
 **Where:** `frontend/booking.js:180–183`
 
@@ -197,7 +201,7 @@ The auth views already do this correctly (`.auth-error` with `role="alert"` unde
 
 ## Optional
 
-### [ ] 9. Tag changes are not announced
+### [x] 9. Tag changes are not announced
 
 **Where:** `frontend/index.html:1183` (`#tagsWrap`)
 
@@ -219,7 +223,8 @@ The amount field sets `enterkeyhint="done"`, the picker's search sets `enterkeyh
 
 ## Verdict
 
-**Revision needed** — for the flow as a whole, not for PR #230.
+**Revision needed** at the time of writing — for the flow as a whole, not for PR #230. Findings 1–8
+have since been implemented; see the status note at the top.
 
 The structure is right and the offline handling is above average for this kind of app. What is missing sits at the end of the interaction: after a successful save the user may see nothing (1), on dismissal input vanishes without a word (2), and when something does go wrong the message is an HTTP code (3). Those three concern the same thing — the flow tells the user very little about what it just did.
 
