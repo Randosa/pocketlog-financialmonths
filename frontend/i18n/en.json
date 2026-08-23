@@ -308,6 +308,7 @@
     "searchPlaceholder": "Search tags",
     "addAria": "Add tag",
     "createAria": "Create tag",
+    "addSuggestionAria": "Add tag “{name}”",
     "removeAria": "Remove tag “{name}”"
   },
   "selection": {

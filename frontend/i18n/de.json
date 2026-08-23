@@ -308,6 +308,7 @@
     "searchPlaceholder": "Tags durchsuchen",
     "addAria": "Tag hinzufügen",
     "createAria": "Tag erstellen",
+    "addSuggestionAria": "Tag „{name}“ hinzufügen",
     "removeAria": "Tag „{name}“ entfernen"
   },
   "selection": {

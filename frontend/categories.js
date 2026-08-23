@@ -48,10 +48,13 @@ function renderTagSuggestions() {
   });
   const top = remaining.slice(0, 10);
   top.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  // Label is the bare tag name — same chip as in the picker. The "add"
+  // intent comes from the row's position under the tag field, so it only
+  // needs spelling out for screen readers.
   box.innerHTML = top
     .map(
       (t) =>
-        `<button type="button" class="tag-suggestion" data-add-tag="${_escAttr(t)}">+ ${_escText(t)}</button>`,
+        `<button type="button" class="tag-suggestion" data-add-tag="${_escAttr(t)}" aria-label="${_escAttr(tr('tags.addSuggestionAria', { name: t }))}">${_escText(t)}</button>`,
     )
     .join('');
   box.querySelectorAll('[data-add-tag]').forEach((el) => {

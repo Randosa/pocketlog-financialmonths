@@ -2238,7 +2238,12 @@
         font-size: var(--fs-caption);
         padding: var(--space-8) var(--space-4);
       }
-      .tag-picker-chip {
+      /* One tag chip, two placements: the picker grid and the suggestion
+         row under the booking form's tag field. Same object, so the resting
+         look is shared here — only the states below differ (.selected in the
+         picker, hover in the suggestion row). */
+      .tag-picker-chip,
+      .tag-suggestion {
         background: transparent;
         border: var(--border-hairline-strong);
         border-radius: var(--r-pill);
@@ -2456,18 +2461,7 @@
       .tag-suggestions:empty {
         display: none;
       }
-      .tag-suggestion {
-        background: transparent;
-        border: 1px dashed var(--text3);
-        border-radius: var(--r-pill);
-        padding: var(--space-10) var(--space-14);
-        font-size: var(--fs-micro);
-        font-weight: 500;
-        color: var(--text2);
-        cursor: pointer;
-        font-family: inherit;
-        transition: all var(--dur-base) var(--ease-spring);
-      }
+      /* Resting look shared with .tag-picker-chip further up. */
       .tag-suggestion:focus-visible {
         outline: none;
         box-shadow: var(--focus-ring);
@@ -2475,8 +2469,7 @@
       .tag-suggestion:hover,
       .tag-suggestion:active {
         background: var(--bg-canvas);
-        border-style: solid;
-        border-color: var(--hairline-soft);
+        border-color: var(--hairline);
         color: var(--text);
       }
 
