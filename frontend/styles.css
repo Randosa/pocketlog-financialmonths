@@ -1648,10 +1648,15 @@
         transition: background var(--dur-fast);
         -webkit-tap-highlight-color: transparent;
       }
-      .drawer-close-btn:hover,
       .drawer-close-btn:active {
         background: var(--surface-tint);
         color: var(--text);
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .drawer-close-btn:hover {
+          background: var(--surface-tint);
+          color: var(--text);
+        }
       }
       .drawer-close-btn:focus-visible {
         outline: none;
@@ -1822,10 +1827,15 @@
         outline: none;
         box-shadow: var(--focus-ring);
       }
-      .drawer-back-btn:hover,
       .drawer-back-btn:active {
         background: var(--surface-tint);
         color: var(--text);
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .drawer-back-btn:hover {
+          background: var(--surface-tint);
+          color: var(--text);
+        }
       }
       .drawer-sub-title {
         font-family: var(--font-body);
@@ -1933,10 +1943,15 @@
         outline: none;
         box-shadow: var(--focus-ring);
       }
-      .modal-cancel-btn:hover,
       .modal-cancel-btn:active {
         background: var(--surface-tint);
         color: var(--text);
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .modal-cancel-btn:hover {
+          background: var(--surface-tint);
+          color: var(--text);
+        }
       }
 
       .modal-body {
@@ -2376,10 +2391,17 @@
         text-align: left;
         transition: background var(--dur-base) var(--ease-soft);
       }
-      .icon-trigger:hover,
       .icon-trigger:focus-visible {
         background: var(--bg-grouped);
         outline: none;
+      }
+      .icon-trigger:active {
+        background: var(--bg-grouped);
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .icon-trigger:hover {
+          background: var(--bg-grouped);
+        }
       }
       .icon-trigger:focus-visible {
         box-shadow: var(--focus-ring);
@@ -2468,11 +2490,24 @@
         outline: none;
         box-shadow: var(--focus-ring);
       }
-      .tag-suggestion:hover,
-      .tag-suggestion:active {
+      /* Already on the booking: the chip keeps its slot so the row cannot
+         reflow mid-tap, but recedes to tertiary and stops responding. */
+      .tag-suggestion.is-added {
+        border-color: var(--hairline-soft);
+        color: var(--text3);
+        cursor: default;
+      }
+      .tag-suggestion:not(:disabled):active {
         background: var(--bg-canvas);
         border-color: var(--hairline);
         color: var(--text);
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .tag-suggestion:not(:disabled):hover {
+          background: var(--bg-canvas);
+          border-color: var(--hairline);
+          color: var(--text);
+        }
       }
 
       .submit-btn {
@@ -2859,11 +2894,17 @@
         outline: none;
         box-shadow: var(--focus-ring);
       }
-      .range-stepper > button:not(.range-stepper-label):hover,
       .range-stepper > button:not(.range-stepper-label):active {
         background: var(--bg-grouped);
         color: var(--text);
         transform: scale(0.94);
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .range-stepper > button:not(.range-stepper-label):hover {
+          background: var(--bg-grouped);
+          color: var(--text);
+          transform: scale(0.94);
+        }
       }
       /* The label is a direct-child button but not a round arrow — a two-class
          selector outranks the chrome rule above. Auto-width pill; only month/
@@ -3702,8 +3743,13 @@
         cursor: pointer;
         border-radius: var(--r-sm);
       }
-      .recurring-skip-list button:hover {
+      .recurring-skip-list button:active {
         color: var(--accent);
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .recurring-skip-list button:hover {
+          color: var(--accent);
+        }
       }
       .recurring-skip-list button:focus-visible {
         outline: none;
@@ -3846,9 +3892,13 @@
         cursor: pointer;
         transition: background var(--dur-base) var(--ease-soft);
       }
-      .confirm-cancel:hover,
       .confirm-cancel:active {
         background: var(--surface-tint);
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .confirm-cancel:hover {
+          background: var(--surface-tint);
+        }
       }
       .confirm-cancel:focus-visible {
         outline: none;
@@ -4325,10 +4375,15 @@
         cursor: pointer;
         border-radius: var(--r-sm);
       }
-      .icon-btn:hover,
       .icon-btn:active {
         color: var(--text);
         background: var(--surface-tint);
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .icon-btn:hover {
+          color: var(--text);
+          background: var(--surface-tint);
+        }
       }
       .icon-btn:focus-visible {
         outline: none;

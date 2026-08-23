@@ -33,7 +33,9 @@ function openModal(tx) {
   _populateCategorySelect(document.getElementById('inputCat'), tx ? tx.category_id : null);
   setType(tx?.type || 'out', document.querySelector('.type-btn.out'));
   renderTagPills();
-  renderTagSuggestions();
+  // Opening is the only moment the suggestion row is recomputed; every later
+  // add/remove just re-renders the frozen list (see refreshTagSuggestions).
+  refreshTagSuggestions();
   document.querySelector('.modal h2').textContent = tx ? tr('tx.editTitle') : tr('tx.newTitle');
   // Amount label carries the active currency symbol; placeholder uses
   // the locale decimal separator.

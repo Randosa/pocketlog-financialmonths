@@ -32,9 +32,14 @@ const appState = {
 
   // Draft of the booking form (the in/out toggle and the tags being attached
   // to the next transaction). currentType / currentTags.
+  //
+  // `suggestions` is the tag-suggestion row, frozen when the modal opens:
+  // adding a tag greys its chip in place instead of dropping it from the
+  // list, so the row never reflows under the user's finger mid-tap.
   form: {
     type: 'out',
     tags: [],
+    suggestions: [],
   },
 
   // Reports view. `current` is the active report id (restored from
