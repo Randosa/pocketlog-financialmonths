@@ -37,7 +37,8 @@ function renderTagSuggestions() {
   if (!box) return;
   const selected = new Set(appState.form.tags.map((x) => x.toLowerCase()));
   const remaining = appState.ledger.availableTags.filter((t) => !selected.has(t.toLowerCase()));
-  // Pick the 10 most-used (last 30 days), then render alphabetically
+  // Pick the 10 most-used (last 90 days, windowed server-side in
+  // crud/tags.py TAG_COUNT_WINDOW_DAYS), then render alphabetically
   // so users can scan the row without re-learning order each open.
   remaining.sort((a, b) => {
     const ca = tagCounts.get(a.toLowerCase()) || 0;
@@ -47,10 +48,13 @@ function renderTagSuggestions() {
   });
   const top = remaining.slice(0, 10);
   top.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  // Label is the bare tag name — same chip as in the picker. The "add"
+  // intent comes from the row's position under the tag field, so it only
+  // needs spelling out for screen readers.
   box.innerHTML = top
     .map(
       (t) =>
-        `<button type="button" class="tag-suggestion" data-add-tag="${_escAttr(t)}">+ ${_escText(t)}</button>`,
+        `<button type="button" class="tag-suggestion" data-add-tag="${_escAttr(t)}" aria-label="${_escAttr(tr('tags.addSuggestionAria', { name: t }))}">${_escText(t)}</button>`,
     )
     .join('');
   box.querySelectorAll('[data-add-tag]').forEach((el) => {

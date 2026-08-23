@@ -16,6 +16,10 @@ from sqlalchemy.orm import Session
 
 from .. import exceptions, models, schemas
 
+# Window for the usage counts returned by ``list_tags``; the frontend ranks
+# its tag suggestions by them (``renderTagSuggestions`` in categories.js).
+TAG_COUNT_WINDOW_DAYS = 90
+
 
 def _build_tag_cache(db: Session, user_id: int) -> dict[str, models.Tag]:
     """One SELECT of every tag the user owns, keyed by case-fold name.
@@ -75,9 +79,11 @@ def _resolve_tags(
 def list_tags(db: Session, user_id: int) -> list[dict]:
     # Names: every tag the user has — both standalone (no transactions
     # attached) and tags currently linked to one or more transactions.
-    # Counts: only transactions from the last 30 days, so suggestions
+    # Counts: only transactions from the last 90 days, so suggestions
     # surface tags that are currently relevant rather than long-stale.
-    cutoff = date_type.today() - timedelta(days=30)
+    # 90 days covers the quarterly rhythm (insurance, car, doctor) that a
+    # one-month window never sees.
+    cutoff = date_type.today() - timedelta(days=TAG_COUNT_WINDOW_DAYS)
 
     # Single grouped query: LEFT JOIN keeps standalone tags with count 0;
     # the CASE ... date >= cutoff windows the count without filtering

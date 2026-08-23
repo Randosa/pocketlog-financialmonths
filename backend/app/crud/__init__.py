@@ -86,6 +86,7 @@ from .settings import (
     update_settings,
 )
 from .tags import (
+    TAG_COUNT_WINDOW_DAYS,
     _build_tag_cache,
     _find_tag_by_name,
     _resolve_tags,
@@ -165,6 +166,7 @@ __all__ = [
     "list_budgets",
     "update_budget",
     # tags
+    "TAG_COUNT_WINDOW_DAYS",
     "_build_tag_cache",
     "_find_tag_by_name",
     "_resolve_tags",

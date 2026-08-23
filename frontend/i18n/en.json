@@ -306,8 +306,10 @@
     "newPlaceholder": "New tag",
     "existing": "Existing tags",
     "searchPlaceholder": "Search tags",
+    "searchNone": "No tags found.",
     "addAria": "Add tag",
     "createAria": "Create tag",
+    "addSuggestionAria": "Add tag “{name}”",
     "removeAria": "Remove tag “{name}”"
   },
   "selection": {
@@ -404,6 +406,8 @@
     "toYear": "To year",
     "searchCategory": "Search category",
     "searchTag": "Search tag",
+    "searchNoneCategory": "No categories found.",
+    "searchNoneTag": "No tags found.",
     "trendSelect": "Trend selection",
     "kindCategories": "Categories",
     "kindTags": "Tags",

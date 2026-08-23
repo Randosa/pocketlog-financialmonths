@@ -306,8 +306,10 @@
     "newPlaceholder": "Neuer Tag",
     "existing": "Vorhandene Tags",
     "searchPlaceholder": "Tags durchsuchen",
+    "searchNone": "Keine Tags gefunden.",
     "addAria": "Tag hinzufügen",
     "createAria": "Tag erstellen",
+    "addSuggestionAria": "Tag „{name}“ hinzufügen",
     "removeAria": "Tag „{name}“ entfernen"
   },
   "selection": {
@@ -404,6 +406,8 @@
     "toYear": "Bis Jahr",
     "searchCategory": "Kategorie suchen",
     "searchTag": "Tag suchen",
+    "searchNoneCategory": "Keine Kategorien gefunden.",
+    "searchNoneTag": "Keine Tags gefunden.",
     "trendSelect": "Trend-Auswahl",
     "kindCategories": "Kategorien",
     "kindTags": "Tags",
