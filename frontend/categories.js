@@ -37,7 +37,8 @@ function renderTagSuggestions() {
   if (!box) return;
   const selected = new Set(appState.form.tags.map((x) => x.toLowerCase()));
   const remaining = appState.ledger.availableTags.filter((t) => !selected.has(t.toLowerCase()));
-  // Pick the 10 most-used (last 30 days), then render alphabetically
+  // Pick the 10 most-used (last 90 days, windowed server-side in
+  // crud/tags.py TAG_COUNT_WINDOW_DAYS), then render alphabetically
   // so users can scan the row without re-learning order each open.
   remaining.sort((a, b) => {
     const ca = tagCounts.get(a.toLowerCase()) || 0;
