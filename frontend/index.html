@@ -1297,7 +1297,10 @@
                 spellcheck="false"
               />
             </div>
-            <div class="tag-picker-chips" id="tagPickerChips" data-empty="Keine Tags gefunden." data-i18n-attr="data-empty:tags.searchNone"></div>
+            <!-- No inline data-empty fallback: i18n.js sets the attribute during
+                 boot (setLocale -> applyStatic), long before the picker can be
+                 opened, and the pseudo-element renders nothing without it. -->
+            <div class="tag-picker-chips" id="tagPickerChips" data-i18n-attr="data-empty:tags.searchNone"></div>
           </div>
         </div>
         <div class="modal-footer">
