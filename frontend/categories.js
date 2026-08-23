@@ -32,10 +32,16 @@ async function loadTags() {
   renderTagList();
 }
 
-function renderTagSuggestions() {
-  const box = document.getElementById('tagSuggestions');
-  if (!box) return;
+// Recompute the suggestion row and freeze it into appState.form.suggestions.
+// Called once per modal open — never on add/remove, so the row keeps its
+// membership and order for as long as the modal is up. Without that, tapping
+// a chip re-flowed the row and a different tag slid under the finger: the
+// next tap hit the wrong tag, and on iOS the sticky hover from the tap landed
+// on whichever chip had taken that spot.
+function refreshTagSuggestions() {
   const selected = new Set(appState.form.tags.map((x) => x.toLowerCase()));
+  // Seeded from what is not yet on the booking, so all ten slots are
+  // actionable at open; tags added later grey out in place.
   const remaining = appState.ledger.availableTags.filter((t) => !selected.has(t.toLowerCase()));
   // Pick the 10 most-used (last 90 days, windowed server-side in
   // crud/tags.py TAG_COUNT_WINDOW_DAYS), then render alphabetically
@@ -48,14 +54,25 @@ function renderTagSuggestions() {
   });
   const top = remaining.slice(0, 10);
   top.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  appState.form.suggestions = top;
+  renderTagSuggestions();
+}
+
+function renderTagSuggestions() {
+  const box = document.getElementById('tagSuggestions');
+  if (!box) return;
+  const selected = new Set(appState.form.tags.map((x) => x.toLowerCase()));
   // Label is the bare tag name — same chip as in the picker. The "add"
   // intent comes from the row's position under the tag field, so it only
-  // needs spelling out for screen readers.
-  box.innerHTML = top
-    .map(
-      (t) =>
-        `<button type="button" class="tag-suggestion" data-add-tag="${_escAttr(t)}" aria-label="${_escAttr(tr('tags.addSuggestionAria', { name: t }))}">${_escText(t)}</button>`,
-    )
+  // needs spelling out for screen readers. An already-added chip stays in
+  // place, greyed and disabled: it holds the layout and turns a stray second
+  // tap into a no-op instead of adding a tag the user never aimed at.
+  box.innerHTML = appState.form.suggestions
+    .map((t) => {
+      const added = selected.has(t.toLowerCase());
+      const label = added ? 'tags.addedSuggestionAria' : 'tags.addSuggestionAria';
+      return `<button type="button" class="tag-suggestion${added ? ' is-added' : ''}" data-add-tag="${_escAttr(t)}"${added ? ' disabled' : ''} aria-label="${_escAttr(tr(label, { name: t }))}">${_escText(t)}</button>`;
+    })
     .join('');
   box.querySelectorAll('[data-add-tag]').forEach((el) => {
     el.addEventListener('click', () => addTagFromSuggestion(el.dataset.addTag));
