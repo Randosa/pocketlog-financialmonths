@@ -307,10 +307,12 @@
     "existing": "Existing tags",
     "searchPlaceholder": "Search tags",
     "searchNone": "No tags found.",
-    "addAria": "Add tag",
+    "searchOrCreate": "Search or create tags",
+    "createChip": "+ Create “{name}”",
+    "limitReached": "At most {max} tags per booking.",
+    "moreResults": "… and {n} more",
     "createAria": "Create tag",
     "addSuggestionAria": "Add tag “{name}”",
-    "addedSuggestionAria": "Tag “{name}” is already added",
     "removeAria": "Remove tag “{name}”"
   },
   "selection": {

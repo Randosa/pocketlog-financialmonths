@@ -2167,17 +2167,6 @@
         flex: 1;
       }
 
-      .tags-input-wrap {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--space-8);
-        align-items: center;
-        padding: var(--space-8) var(--space-10);
-        background: var(--bg-canvas);
-        border: var(--border-hairline);
-        border-radius: var(--r-md);
-        min-height: 48px;
-      }
       .tag-pill {
         background: var(--bg-grouped);
         border: var(--border-hairline);
@@ -2248,15 +2237,26 @@
         min-width: 0;
       }
 
-      .tag-picker-search {
+      .tag-picker-search,
+      .tag-chooser-search {
         height: var(--btn-fab-size);
         padding: 0 var(--space-16);
         margin-bottom: var(--space-12);
       }
-      /* The picker's filter input lives inside .form-group, whose generic
-         input styling would otherwise paint a second pill inside the
-         search bar. Strip it so the search-wrap reads as a single field. */
-      .form-group .tag-picker-search .search-input {
+      .tag-chooser-search {
+        margin-bottom: var(--space-10);
+      }
+      /* Count / limit / no-match line under the chip row. */
+      .tag-chooser-hint {
+        margin: var(--space-8) 0 0;
+        font-size: var(--fs-footnote);
+        color: var(--text3);
+        line-height: 1.4;
+      }
+      /* These filter inputs live inside .form-group, whose generic input
+         styling would otherwise paint a second pill inside the search bar.
+         Strip it so the search-wrap reads as a single field. */
+      .form-group :is(.tag-picker-search, .tag-chooser-search) .search-input {
         background: none;
         border: none;
         box-shadow: none;
@@ -2526,8 +2526,13 @@
         border-color: var(--accent);
         color: var(--text);
       }
-      .tag-suggestion.is-added {
-        cursor: default;
+      /* Offers to make the typed text a tag. Dashed and in the accent so it
+         cannot be mistaken for one of the existing chips beside it. */
+      .tag-create {
+        border-style: dashed;
+        border-color: var(--accent);
+        color: var(--accent);
+        font-weight: 600;
       }
       /* Only the not-yet-added chip reacts — an added one already carries the
          accent and must not have it overwritten. */

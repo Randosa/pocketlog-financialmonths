@@ -307,10 +307,12 @@
     "existing": "Vorhandene Tags",
     "searchPlaceholder": "Tags durchsuchen",
     "searchNone": "Keine Tags gefunden.",
-    "addAria": "Tag hinzufügen",
+    "searchOrCreate": "Tags suchen oder anlegen",
+    "createChip": "+ „{name}“ anlegen",
+    "limitReached": "Höchstens {max} Tags pro Buchung.",
+    "moreResults": "… und {n} weitere",
     "createAria": "Tag erstellen",
     "addSuggestionAria": "Tag „{name}“ hinzufügen",
-    "addedSuggestionAria": "Tag „{name}“ ist bereits hinzugefügt",
     "removeAria": "Tag „{name}“ entfernen"
   },
   "selection": {

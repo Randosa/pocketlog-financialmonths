@@ -1195,20 +1195,33 @@
             <input type="text" id="inputDesc" placeholder="z.B. Supermarkt" data-i18n-attr="placeholder:tx.notesPlaceholder" />
           </div>
           <div class="form-group">
-            <label data-i18n="tx.tags">Tags</label>
-            <div class="tags-input-wrap" id="tagsWrap" aria-live="polite">
-              <button
-                type="button"
-                class="tag-add-btn"
-                id="tagPickerBtn"
-                aria-label="Tag hinzufügen"
-                data-i18n-attr="aria-label:tags.addAria"
-                data-action="openTagPicker"
-              >
-                <svg class="ui-icon" aria-hidden="true"><use href="#icon-plus" /></svg>
-              </button>
+            <label id="tagSearchLabel" for="tagSearch" data-i18n="tx.tags">Tags</label>
+            <div class="search-wrap tag-chooser-search">
+              <span class="search-icon" aria-hidden="true">
+                <svg class="ui-icon"><use href="#icon-search" /></svg>
+              </span>
+              <input
+                class="search-input"
+                id="tagSearch"
+                type="search"
+                maxlength="64"
+                placeholder="Tags suchen oder anlegen"
+                data-i18n-attr="placeholder:tags.searchOrCreate"
+                enterkeyhint="done"
+                inputmode="search"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                data-action-input="filterTagChooser"
+                data-action-keydown="handleTagChooserKey"
+                data-args='["transaction", "@value", "@event"]'
+              />
             </div>
-            <div class="tag-suggestions" id="tagSuggestions"></div>
+            <!-- The row is the selection: a chip carries the accent when the
+                 tag is on the booking, so nothing is listed twice. -->
+            <div class="tag-suggestions" id="tagSuggestions" role="group" aria-labelledby="tagSearchLabel"></div>
+            <p class="tag-chooser-hint" id="tagSuggestionsHint" role="status" hidden></p>
           </div>
         </div>
         <div class="modal-footer">
@@ -1560,19 +1573,33 @@
             <input type="number" id="recEditMaxOccurrences" min="1" max="10000" />
           </div>
           <div class="form-group">
-            <label data-i18n="tx.tags">Tags</label>
-            <div class="tags-input-wrap" id="recTagsWrap">
-              <button
-                type="button"
-                class="tag-add-btn"
-                id="recTagPickerBtn"
-                aria-label="Tag hinzufügen"
-                data-i18n-attr="aria-label:tags.addAria"
-                data-action="openTagPickerFor" data-args='["recurring"]'
-              >
-                <svg class="ui-icon" aria-hidden="true"><use href="#icon-plus" /></svg>
-              </button>
+            <label id="recTagSearchLabel" for="recTagSearch" data-i18n="tx.tags">Tags</label>
+            <div class="search-wrap tag-chooser-search">
+              <span class="search-icon" aria-hidden="true">
+                <svg class="ui-icon"><use href="#icon-search" /></svg>
+              </span>
+              <input
+                class="search-input"
+                id="recTagSearch"
+                type="search"
+                maxlength="64"
+                placeholder="Tags suchen oder anlegen"
+                data-i18n-attr="placeholder:tags.searchOrCreate"
+                enterkeyhint="done"
+                inputmode="search"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                data-action-input="filterTagChooser"
+                data-action-keydown="handleTagChooserKey"
+                data-args='["recurring", "@value", "@event"]'
+              />
             </div>
+            <!-- The row is the selection: a chip carries the accent when the
+                 tag is on the rule, so nothing is listed twice. -->
+            <div class="tag-suggestions" id="recTagSuggestions" role="group" aria-labelledby="recTagSearchLabel"></div>
+            <p class="tag-chooser-hint" id="recTagSuggestionsHint" role="status" hidden></p>
           </div>
           <!-- Skips block, only visible on edit. The skip button is
                described by the status hint above (#recEditStatusHint),
