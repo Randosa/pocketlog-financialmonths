@@ -33,16 +33,25 @@ const appState = {
   // Draft of the booking form (the in/out toggle and the tags being attached
   // to the next transaction). currentType / currentTags.
   //
-  // `suggestions` is the tag-suggestion row, frozen when the modal opens:
-  // adding a tag greys its chip in place instead of dropping it from the
-  // list, so the row never reflows under the user's finger mid-tap.
   // `pristine` is the serialised form state at open — closeModal compares
   // against it to ask before discarding a draft. Null while no modal is up.
   form: {
     type: 'out',
     tags: [],
-    suggestions: [],
     pristine: null,
+  },
+
+  // Tag chooser under the booking and recurring forms: a search field over
+  // every tag plus a chip row that doubles as the selection, so a tag is
+  // never shown twice. The selections themselves live with their form
+  // (form.tags / recurring.tags); this only holds the view.
+  //
+  // `shown` is the list currently rendered, and it is deliberately frozen
+  // between query changes: toggling a chip recolours it in place instead of
+  // reordering the row under the user's finger mid-tap.
+  tagChooser: {
+    transaction: { query: '', shown: [], overflow: 0 },
+    recurring: { query: '', shown: [], overflow: 0 },
   },
 
   // Reports view. `current` is the active report id (restored from
@@ -139,15 +148,14 @@ const appState = {
     retrying: false,
   },
 
-  // Tag picker (shared between the transaction form, the recurring form and
-  // the bulk add/remove actions). pickerSelection / _tagPickerContext /
-  // currentRecurringTags. `bulkRemovePool` holds the union of tags present on
-  // the currently selected transactions, so the "remove tag" picker offers
-  // only tags that can actually be removed.
+  // Tag picker modal — only the ledger's bulk add/remove actions still use
+  // it; the two forms pick tags inline through tagChooser above.
+  // `bulkRemovePool` holds the union of tags present on the currently
+  // selected transactions, so the "remove tag" picker offers only tags that
+  // can actually be removed.
   tagPicker: {
     selection: [],
-    context: 'transaction',
-    recurringTags: [],
+    context: 'bulkAdd',
     bulkRemovePool: [],
   },
 
@@ -188,6 +196,7 @@ const appState = {
     rules: [],
     editingId: null,
     validity: 'unlimited',
+    tags: [],
   },
 
   // Tag rename modal draft. editingTagName.

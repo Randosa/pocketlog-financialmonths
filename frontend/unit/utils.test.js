@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 import utils from '../utils.js';
 
 const {
+  MAX_TAG_LENGTH,
+  MAX_TAGS_PER_TX,
+  _normaliseNewTag,
   _iso,
   _daysInMonth,
   _escAttr,
@@ -539,5 +542,43 @@ describe('_failedEntrySummary', () => {
     expect(
       _failedEntrySummary({ method: 'POST', path: '/transactions?x=1', body: {} }).entity,
     ).toBe('transaction');
+  });
+});
+
+describe('_normaliseNewTag', () => {
+  it('mirrors the server-side limits', () => {
+    // Kept in step with backend/app/schemas.py; a drift here is what makes a
+    // tag round-trip fail with a 422 the user cannot read.
+    expect(MAX_TAG_LENGTH).toBe(64);
+    expect(MAX_TAGS_PER_TX).toBe(20);
+  });
+
+  it('trims surrounding whitespace', () => {
+    expect(_normaliseNewTag('  Versicherung  ')).toBe('Versicherung');
+  });
+
+  it('keeps inner spacing and non-ASCII intact', () => {
+    expect(_normaliseNewTag('Günther Lang Gmbh')).toBe('Günther Lang Gmbh');
+  });
+
+  it('strips control characters the API would reject', () => {
+    expect(_normaliseNewTag('Stro\u0000m\u001f')).toBe('Strom');
+    expect(_normaliseNewTag('a\u007fb')).toBe('ab');
+  });
+
+  it('caps at the maximum length', () => {
+    expect(_normaliseNewTag('x'.repeat(80))).toHaveLength(MAX_TAG_LENGTH);
+  });
+
+  it('trims before capping, so padding cannot eat the name', () => {
+    expect(_normaliseNewTag('   ' + 'y'.repeat(64) + '   ')).toBe('y'.repeat(64));
+  });
+
+  it('returns an empty string for anything that would not survive', () => {
+    // Callers treat '' as "nothing to create", so blank and control-only
+    // input must not reach the chooser as a tag.
+    for (const raw of ['', '   ', '\u0000\u001f', null, undefined]) {
+      expect(_normaliseNewTag(raw)).toBe('');
+    }
   });
 });

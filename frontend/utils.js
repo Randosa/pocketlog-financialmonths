@@ -308,10 +308,33 @@ function _importReport(result, cap = 10) {
 
 // Node/Vitest only — the browser classic-script load skips this (module is
 // undefined there) and relies on the global function declarations above.
+// Mirrors of the server-side tag limits (backend/app/schemas.py). The tag
+// chooser enforces them before sending, so a slip surfaces as a hint in the
+// form rather than an unreadable 422.
+const MAX_TAG_LENGTH = 64;
+const MAX_TAGS_PER_TX = 20;
+
+// Clean a freshly typed tag name the way schemas._normalise_tags would:
+// control characters out, trimmed, capped. Returns '' for anything that would
+// not survive the round trip, so callers can simply skip it.
+function _normaliseNewTag(raw) {
+  // Filtered by code point rather than a regex: a control-character class
+  // reads badly and trips eslint's no-control-regex for no gain.
+  const DEL = String.fromCharCode(127);
+  return [...String(raw ?? '')]
+    .filter((ch) => ch >= ' ' && ch !== DEL)
+    .join('')
+    .trim()
+    .slice(0, MAX_TAG_LENGTH);
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     _iso,
     _daysInMonth,
+    MAX_TAG_LENGTH,
+    MAX_TAGS_PER_TX,
+    _normaliseNewTag,
     _escAttr,
     _escText,
     _parseAmountWith,

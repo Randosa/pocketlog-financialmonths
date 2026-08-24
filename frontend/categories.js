@@ -32,119 +32,232 @@ async function loadTags() {
   renderTagList();
 }
 
-// Recompute the suggestion row and freeze it into appState.form.suggestions.
-// Called once per modal open — never on add/remove, so the row keeps its
-// membership and order for as long as the modal is up. Without that, tapping
-// a chip re-flowed the row and a different tag slid under the finger: the
-// next tap hit the wrong tag, and on iOS the sticky hover from the tap landed
-// on whichever chip had taken that spot.
-function refreshTagSuggestions() {
-  const selected = new Set(appState.form.tags.map((x) => x.toLowerCase()));
-  // Seeded from what is not yet on the booking, so all ten slots are
-  // actionable at open; tags added later grey out in place.
-  const remaining = appState.ledger.availableTags.filter((t) => !selected.has(t.toLowerCase()));
-  // Pick the 10 most-used (last 90 days, windowed server-side in
-  // crud/tags.py TAG_COUNT_WINDOW_DAYS), then render alphabetically
-  // so users can scan the row without re-learning order each open.
-  remaining.sort((a, b) => {
-    const ca = tagCounts.get(a.toLowerCase()) || 0;
-    const cb = tagCounts.get(b.toLowerCase()) || 0;
-    if (cb !== ca) return cb - ca;
-    return a.localeCompare(b, undefined, { sensitivity: 'base' });
-  });
-  const top = remaining.slice(0, 10);
-  top.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  appState.form.suggestions = top;
-  renderTagSuggestions();
+// ── TAG CHOOSER ───────────────────────────────────────────────────────────────
+// The booking form and the recurring-rule editor pick tags the same way: a
+// search field over every tag, and below it a chip row that *is* the
+// selection — a chosen tag carries the accent rather than being repeated as a
+// pill somewhere else. That is why neither form has a tag field any more, and
+// why the picker modal is left to the ledger's bulk actions.
+//
+// The two contexts differ only in which elements they own and where their
+// selection lives.
+const TAG_CHOOSERS = {
+  transaction: {
+    input: 'tagSearch',
+    row: 'tagSuggestions',
+    hint: 'tagSuggestionsHint',
+    read: () => appState.form.tags,
+    write: (v) => {
+      appState.form.tags = v;
+    },
+  },
+  recurring: {
+    input: 'recTagSearch',
+    row: 'recTagSuggestions',
+    hint: 'recTagSuggestionsHint',
+    read: () => appState.recurring.tags,
+    write: (v) => {
+      appState.recurring.tags = v;
+    },
+  },
+};
+
+// Chips shown with an empty field, and the cap once a query narrows things
+// down — enough to be useful, few enough to scan without scrolling the modal.
+const TAG_CHOOSER_TOP = 10;
+const TAG_CHOOSER_HITS = 15;
+
+const _byTagName = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' });
+
+// Decide which chips the row shows, and freeze that order into the view
+// state. Called when a form opens and whenever the query changes — never on
+// toggle. Without that a tap would re-sort the row under the finger and the
+// next tap would land on a different tag.
+function _rebuildTagChooser(ctx) {
+  const chooser = TAG_CHOOSERS[ctx];
+  const view = appState.tagChooser[ctx];
+  const query = view.query.trim().toLowerCase();
+  const all = appState.ledger.availableTags;
+
+  if (query) {
+    // Search runs over every tag, not just the frequent ones — that is the
+    // whole point of the field replacing the picker.
+    const hits = all.filter((t) => t.toLowerCase().includes(query)).sort(_byTagName);
+    view.shown = hits.slice(0, TAG_CHOOSER_HITS);
+    view.overflow = hits.length - view.shown.length;
+    return;
+  }
+
+  // Overview: what is already attached comes first, so editing an old entry
+  // shows its tags even when none of them are among the frequent ones.
+  const chosen = chooser.read();
+  const selected = new Set(chosen.map((x) => x.toLowerCase()));
+  const rest = all
+    .filter((t) => !selected.has(t.toLowerCase()))
+    .sort((a, b) => {
+      // Most-used first (90-day window, see crud/tags.py), then by name.
+      const ca = tagCounts.get(a.toLowerCase()) || 0;
+      const cb = tagCounts.get(b.toLowerCase()) || 0;
+      return cb !== ca ? cb - ca : _byTagName(a, b);
+    })
+    .slice(0, TAG_CHOOSER_TOP)
+    .sort(_byTagName);
+  view.shown = [...chosen.slice().sort(_byTagName), ...rest];
+  view.overflow = 0;
 }
 
-function renderTagSuggestions() {
-  const box = document.getElementById('tagSuggestions');
+function renderTagChooser(ctx) {
+  const chooser = TAG_CHOOSERS[ctx];
+  const box = document.getElementById(chooser.row);
   if (!box) return;
-  const selected = new Set(appState.form.tags.map((x) => x.toLowerCase()));
-  // Label is the bare tag name — same chip as in the picker. The "add"
-  // intent comes from the row's position under the tag field, so it only
-  // needs spelling out for screen readers. An already-added chip stays in
-  // place, greyed and disabled: it holds the layout and turns a stray second
-  // tap into a no-op instead of adding a tag the user never aimed at.
-  // Replacing innerHTML drops the focused chip, and the one that replaces it
-  // is disabled, so keyboard focus fell out of the row on every add. The row
-  // is frozen, so the slot index is stable — restore focus there.
+  const view = appState.tagChooser[ctx];
+  const chosen = chooser.read();
+  const selected = new Set(chosen.map((x) => x.toLowerCase()));
+  const query = _normaliseNewTag(view.query);
+  const full = chosen.length >= MAX_TAGS_PER_TX;
+  const exact =
+    query && appState.ledger.availableTags.some((t) => t.toLowerCase() === query.toLowerCase());
+
+  // Replacing innerHTML drops the focused chip; the row order is frozen, so
+  // the same slot still holds the same tag and focus can go straight back.
   const focused = box.contains(document.activeElement)
     ? [...box.children].indexOf(document.activeElement)
     : -1;
-  box.innerHTML = appState.form.suggestions
-    .map((t) => {
-      const added = selected.has(t.toLowerCase());
-      const label = added ? 'tags.addedSuggestionAria' : 'tags.addSuggestionAria';
-      return `<button type="button" class="tag-suggestion${added ? ' is-added' : ''}" data-add-tag="${_escAttr(t)}"${added ? ' disabled' : ''} aria-label="${_escAttr(tr(label, { name: t }))}">${_escText(t)}</button>`;
-    })
-    .join('');
-  box.querySelectorAll('[data-add-tag]').forEach((el) => {
-    el.addEventListener('click', () => addTagFromSuggestion(el.dataset.addTag));
+
+  const chips = view.shown.map((t) => {
+    const on = selected.has(t.toLowerCase());
+    const label = on ? 'tags.removeAria' : 'tags.addSuggestionAria';
+    return `<button type="button" class="tag-suggestion${on ? ' is-added' : ''}" data-chooser-tag="${_escAttr(t)}" aria-pressed="${on}" aria-label="${_escAttr(tr(label, { name: t }))}">${_escText(t)}</button>`;
   });
-  if (focused >= 0) {
-    const chips = [...box.children];
-    // The chip just used is disabled now — move on to the next one that is
-    // still addable, falling back to the last enabled chip before it.
-    const next =
-      chips.slice(focused).find((el) => !el.disabled) ||
-      chips
-        .slice(0, focused)
-        .reverse()
-        .find((el) => !el.disabled);
-    next?.focus();
+  // Offer to make the typed text a tag, so the name is typed once rather than
+  // again in a separate create field. It goes last: with matches on screen the
+  // likely intent is one of them, and creating "Auto" must stay possible even
+  // though "Autobahn" matches. With no matches it is the only chip anyway.
+  if (query && !exact && !full) {
+    chips.push(
+      `<button type="button" class="tag-suggestion tag-create" data-chooser-create="${_escAttr(query)}">${_escText(tr('tags.createChip', { name: query }))}</button>`,
+    );
   }
+  box.innerHTML = chips.join('');
+  box.querySelectorAll('[data-chooser-tag]').forEach((el) => {
+    el.addEventListener('click', () => toggleTagChooser(ctx, el.dataset.chooserTag));
+  });
+  box.querySelectorAll('[data-chooser-create]').forEach((el) => {
+    el.addEventListener('click', () => createTagFromChooser(ctx, el.dataset.chooserCreate));
+  });
+  if (focused >= 0) box.children[focused]?.focus();
+
+  const hint = document.getElementById(chooser.hint);
+  if (!hint) return;
+  const message = full
+    ? tr('tags.limitReached', { max: MAX_TAGS_PER_TX })
+    : query && !chips.length
+      ? tr('tags.searchNone')
+      : view.overflow > 0
+        ? tr('tags.moreResults', { n: view.overflow })
+        : '';
+  hint.textContent = message;
+  hint.hidden = !message;
 }
 
-function addTagFromSuggestion(t) {
-  if (!t) return;
-  const key = t.toLowerCase();
-  if (!appState.form.tags.some((x) => x.toLowerCase() === key)) appState.form.tags.push(t);
-  renderTagPills();
-  renderTagSuggestions();
+// Chips toggle: the row is the only place a tag appears, so it has to be able
+// to take one off again.
+function toggleTagChooser(ctx, name) {
+  if (!name) return;
+  const chooser = TAG_CHOOSERS[ctx];
+  const list = chooser.read().slice();
+  const i = list.findIndex((x) => x.toLowerCase() === name.toLowerCase());
+  if (i >= 0) list.splice(i, 1);
+  else if (list.length >= MAX_TAGS_PER_TX) {
+    renderTagChooser(ctx); // surfaces the limit hint, adds nothing
+    return;
+  } else list.push(name);
+  chooser.write(list);
+  // Deliberately no rebuild — the chip recolours where it stands.
+  renderTagChooser(ctx);
+}
+
+function filterTagChooser(ctx, value) {
+  appState.tagChooser[ctx].query = value || '';
+  _rebuildTagChooser(ctx);
+  renderTagChooser(ctx);
+  // On a phone the keyboard covers the row the moment the field takes focus.
+  document.getElementById(TAG_CHOOSERS[ctx].row)?.scrollIntoView({ block: 'nearest' });
+}
+
+// Enter is additive only: it picks an exact match or creates the typed name,
+// never removes. Removing is a deliberate tap on the accent chip.
+function handleTagChooserKey(ctx, value, e) {
+  if (!e || e.key !== 'Enter') return;
+  e.preventDefault();
+  const name = _normaliseNewTag(value);
+  if (!name) return;
+  const exact = appState.ledger.availableTags.find((t) => t.toLowerCase() === name.toLowerCase());
+  if (!exact) {
+    createTagFromChooser(ctx, name);
+    return;
+  }
+  const chooser = TAG_CHOOSERS[ctx];
+  if (!chooser.read().some((x) => x.toLowerCase() === exact.toLowerCase())) {
+    toggleTagChooser(ctx, exact);
+  }
+  _clearTagChooserQuery(ctx);
+}
+
+function createTagFromChooser(ctx, raw) {
+  const chooser = TAG_CHOOSERS[ctx];
+  const name = _normaliseNewTag(raw);
+  if (!name) return;
+  const list = chooser.read();
+  if (list.length >= MAX_TAGS_PER_TX) {
+    renderTagChooser(ctx);
+    return;
+  }
+  // In memory only. The tag row is written when the booking or the rule is
+  // saved (crud._resolve_tags creates what is missing), so abandoning the
+  // form leaves no orphan behind — same as the picker's create field did.
+  if (!appState.ledger.availableTags.some((t) => t.toLowerCase() === name.toLowerCase())) {
+    appState.ledger.availableTags.push(name);
+    appState.ledger.availableTags.sort(_byTagName);
+  }
+  chooser.write([...list, name]);
+  _clearTagChooserQuery(ctx);
+}
+
+// Back to the overview, which puts the freshly chosen tag at the front where
+// the user can see it landed.
+function _clearTagChooserQuery(ctx) {
+  appState.tagChooser[ctx].query = '';
+  const input = document.getElementById(TAG_CHOOSERS[ctx].input);
+  if (input) input.value = '';
+  _rebuildTagChooser(ctx);
+  renderTagChooser(ctx);
+}
+
+// Called when a form opens: clear the query and recompute from scratch.
+function resetTagChooser(ctx) {
+  appState.tagChooser[ctx] = { query: '', shown: [], overflow: 0 };
+  const input = document.getElementById(TAG_CHOOSERS[ctx].input);
+  if (input) input.value = '';
+  _rebuildTagChooser(ctx);
+  renderTagChooser(ctx);
 }
 
 // ── TAG PICKER MODAL ──────────────────────────────────────────────────────────
-// Tag-picker staging state lives in appState.tagPicker (state.js):
-//   selection     — staged tags; apply to appState.form.tags only on „Fertig"
-//   context       — which modal opened the picker: 'transaction' | 'recurring'
-//   recurringTags — tags staged in the recurring rule editor
+// Only the ledger's bulk actions still open this. The booking form and the
+// recurring editor pick tags inline through the chooser above, so the picker
+// no longer stages a form's tags — its selection is always the set of tags to
+// add to, or remove from, the marked transactions.
+//   selection      — staged tags, applied on „Übernehmen"
+//   context        — 'bulkAdd' | 'bulkRemove'
+//   bulkRemovePool — tags actually present on the marked transactions
 
-function renderRecurringTagPills() {
-  const wrap = document.getElementById('recTagsWrap');
-  const btn = document.getElementById('recTagPickerBtn');
-  if (!wrap || !btn) return;
-  wrap.innerHTML = appState.tagPicker.recurringTags
-    .map(
-      (t) =>
-        `<span class="tag-pill">${_escText(t)}<button type="button" data-remove-rec-tag="${_escAttr(t)}" aria-label="${_escAttr(tr('tags.removeAria', { name: t }))}">${ICON_SVG.close}</button></span>`,
-    )
-    .join('');
-  wrap.querySelectorAll('[data-remove-rec-tag]').forEach((el) => {
-    el.addEventListener('click', () => removeRecurringTag(el.dataset.removeRecTag));
-  });
-  wrap.appendChild(btn);
-}
-function removeRecurringTag(t) {
-  appState.tagPicker.recurringTags = appState.tagPicker.recurringTags.filter((x) => x !== t);
-  renderRecurringTagPills();
-}
-
-function openTagPicker() {
-  openTagPickerFor('transaction');
-}
 function openTagPickerFor(context) {
   appState.tagPicker.context = context;
   rememberModalFocus('tagPicker');
-  // bulkAdd / bulkRemove start from an empty selection (the picked tags are the
-  // ones to add / remove); the form contexts seed their current tags.
-  appState.tagPicker.selection =
-    context === 'recurring'
-      ? [...appState.tagPicker.recurringTags]
-      : context === 'transaction'
-        ? [...appState.form.tags]
-        : [];
+  // Both bulk contexts start empty: the picked tags are the ones to act on,
+  // not a pre-existing selection to edit.
+  appState.tagPicker.selection = [];
   // Creating a new tag only makes sense when adding; the remove picker offers
   // only tags already present on the selection.
   const isRemove = context === 'bulkRemove';
@@ -160,12 +273,7 @@ function openTagPickerFor(context) {
   }
   const title = document.getElementById('tagPickerTitle');
   if (title)
-    title.textContent =
-      context === 'bulkAdd'
-        ? tr('selection.addTagTitle')
-        : isRemove
-          ? tr('selection.removeTagTitle')
-          : tr('tags.pickTitle');
+    title.textContent = isRemove ? tr('selection.removeTagTitle') : tr('selection.addTagTitle');
   document.getElementById('tagPickerFilter').value = '';
   document.getElementById('tagPickerNew').value = '';
   const chips = document.getElementById('tagPickerChips');
@@ -183,12 +291,9 @@ function openTagPickerFor(context) {
 function closeTagPicker() {
   document.getElementById('tagPickerOverlay').classList.remove('open');
   document.getElementById('tagPickerChips').style.minHeight = '';
-  // Keep scroll-lock if either parent modal is still open.
-  const bookingOpen = document.getElementById('modalOverlay').classList.contains('open');
-  const recurringOpen = document.getElementById('recurringModalOverlay').classList.contains('open');
-  if (!bookingOpen && !recurringOpen) {
-    document.body.style.overflow = '';
-  }
+  // The picker is only reached from the ledger now, so nothing else holds the
+  // scroll lock.
+  document.body.style.overflow = '';
   appState.tagPicker.selection = [];
   releaseFocusTrap('tagPicker');
   restoreModalFocus('tagPicker');
@@ -198,23 +303,10 @@ function closeTagPickerOutside(e) {
 }
 function commitTagPicker() {
   const ctx = appState.tagPicker.context;
-  if (ctx === 'bulkAdd' || ctx === 'bulkRemove') {
-    const tags = [...appState.tagPicker.selection];
-    closeTagPicker();
-    if (!tags.length) return;
-    bulkApply({ action: ctx === 'bulkAdd' ? 'add_tags' : 'remove_tags', tags });
-    return;
-  }
-  if (appState.tagPicker.context === 'recurring') {
-    appState.tagPicker.recurringTags = [...appState.tagPicker.selection];
-    closeTagPicker();
-    renderRecurringTagPills();
-  } else {
-    appState.form.tags = [...appState.tagPicker.selection];
-    closeTagPicker();
-    renderTagPills();
-    renderTagSuggestions();
-  }
+  const tags = [...appState.tagPicker.selection];
+  closeTagPicker();
+  if (!tags.length) return;
+  bulkApply({ action: ctx === 'bulkRemove' ? 'remove_tags' : 'add_tags', tags });
 }
 function renderTagPickerChips() {
   const box = document.getElementById('tagPickerChips');
@@ -230,7 +322,7 @@ function renderTagPickerChips() {
   box.innerHTML = filtered
     .map((t) => {
       const isSel = selected.has(t.toLowerCase());
-      return `<button type="button" class="tag-picker-chip${isSel ? ' selected' : ''}" data-pick-tag="${_escAttr(t)}">${_escText(t)}</button>`;
+      return `<button type="button" class="tag-picker-chip${isSel ? ' selected' : ''}" data-pick-tag="${_escAttr(t)}" aria-pressed="${isSel}">${_escText(t)}</button>`;
     })
     .join('');
   box.querySelectorAll('[data-pick-tag]').forEach((el) => {

@@ -32,10 +32,9 @@ function openModal(tx) {
   document.getElementById('inputDate').value = tx?.date || new Date().toISOString().split('T')[0];
   _populateCategorySelect(document.getElementById('inputCat'), tx ? tx.category_id : null);
   setType(tx?.type || 'out', document.querySelector('.type-btn.out'));
-  renderTagPills();
-  // Opening is the only moment the suggestion row is recomputed; every later
-  // add/remove just re-renders the frozen list (see refreshTagSuggestions).
-  refreshTagSuggestions();
+  // Opening is the only moment the chip row is recomputed from scratch;
+  // toggling a chip afterwards only recolours it (see resetTagChooser).
+  resetTagChooser('transaction');
   document.querySelector('.modal h2').textContent = tx ? tr('tx.editTitle') : tr('tx.newTitle');
   // Amount label carries the active currency symbol; placeholder uses
   // the locale decimal separator.
@@ -211,26 +210,6 @@ function normalizeAmountInput() {
   const inp = document.getElementById('inputAmount');
   const n = parseAmount(inp.value);
   if (!isNaN(n)) inp.value = _formatAmountInput(n);
-}
-
-function removeTag(t) {
-  appState.form.tags = appState.form.tags.filter((x) => x !== t);
-  renderTagPills();
-  renderTagSuggestions();
-}
-function renderTagPills() {
-  const wrap = document.getElementById('tagsWrap');
-  const btn = document.getElementById('tagPickerBtn');
-  wrap.innerHTML = appState.form.tags
-    .map(
-      (t) =>
-        `<span class="tag-pill">${_escText(t)}<button type="button" data-remove-tag="${_escAttr(t)}" aria-label="${_escAttr(tr('tags.removeAria', { name: t }))}">${ICON_SVG.close}</button></span>`,
-    )
-    .join('');
-  wrap.querySelectorAll('[data-remove-tag]').forEach((el) => {
-    el.addEventListener('click', () => removeTag(el.dataset.removeTag));
-  });
-  wrap.appendChild(btn);
 }
 
 async function addTransaction() {

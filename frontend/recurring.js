@@ -306,8 +306,8 @@ function openRecurringModal(id) {
     // on the next save.
     setRecurringValidity(r.max_occurrences != null ? 'count' : r.end_date ? 'date' : 'unlimited');
     document.getElementById('recEditActive').checked = r.active !== false;
-    appState.tagPicker.recurringTags = r.tags ? [...r.tags] : [];
-    renderRecurringTagPills();
+    appState.recurring.tags = r.tags ? [...r.tags] : [];
+    resetTagChooser('recurring');
     title.textContent = tr('recurring.editTitle');
     deleteBtn.style.display = '';
     skipsGroup.hidden = false;
@@ -331,8 +331,8 @@ function openRecurringModal(id) {
     document.getElementById('recEditMaxOccurrences').value = '';
     setRecurringValidity('unlimited');
     document.getElementById('recEditActive').checked = true;
-    appState.tagPicker.recurringTags = [];
-    renderRecurringTagPills();
+    appState.recurring.tags = [];
+    resetTagChooser('recurring');
     _refreshRecurringPreview();
     title.textContent = tr('recurring.newTitle');
     deleteBtn.style.display = 'none';
@@ -430,7 +430,7 @@ async function saveRecurringEdit() {
     amount: f.amount.toFixed(2),
     category_id: f.categoryId,
     desc: f.description,
-    tags: appState.tagPicker.recurringTags,
+    tags: appState.recurring.tags,
     frequency: f.frequency,
     interval: f.interval,
     weekday: f.weekday,
