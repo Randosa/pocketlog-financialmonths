@@ -2277,16 +2277,16 @@
       }
       /* One tag chip, two placements: the picker grid and the suggestion
          row under the booking form's tag field. Same object, so the resting
-         look is shared here — only the states below differ (.selected in the
-         picker, hover in the suggestion row).
-         The chip carries a surface rather than sitting transparent on the
-         modal: a hairline at 1.4:1 barely reads on its own, while a filled
-         shape does — the same device the input fields above already use
-         (white on the grouped background). */
+         look is shared here — only the selected/added state below differs.
+         The outline is 2px rather than the usual hairline: at 1.4:1 against
+         the modal a half-pixel line cannot carry the chip's shape on its own,
+         and width buys legibility without darkening the palette. 2px and not
+         1.5px because engines quantise border-width — Chromium renders
+         0.5/1/1.5px identically as 1px, so 2px is the first real step up. */
       .tag-picker-chip,
       .tag-suggestion {
-        background: var(--bg-canvas);
-        border: var(--border-hairline-strong);
+        background: transparent;
+        border: 2px solid var(--hairline);
         border-radius: var(--r-pill);
         padding: var(--space-10) var(--space-14);
         font-size: var(--fs-micro);
@@ -2299,11 +2299,6 @@
           color var(--dur-base) var(--ease-spring),
           border-color var(--dur-base) var(--ease-spring);
         min-height: var(--btn-chrome-size);
-      }
-      .tag-picker-chip.selected {
-        background: color-mix(in oklab, var(--accent) 18%, transparent);
-        border-color: var(--accent);
-        color: var(--text);
       }
       .tag-picker-chip:focus-visible {
         outline: none;
@@ -2514,24 +2509,24 @@
         outline: none;
         box-shadow: var(--focus-ring);
       }
-      /* Already on the booking: the chip keeps its slot so the row cannot
-         reflow mid-tap, but drops its surface and recedes to tertiary. The
-         missing fill is what marks the state — far easier to see than the
-         hairline shade it used to rely on. */
+      /* Already on the booking / staged in the picker: one state, one look.
+         The accent reads at a glance where a dimmed outline did not, and the
+         chip stays interactive — tapping it again takes the tag off, exactly
+         as it does in the picker. */
+      .tag-picker-chip.selected,
       .tag-suggestion.is-added {
-        background: transparent;
-        border-color: var(--hairline-soft);
-        color: var(--text3);
-        cursor: default;
+        background: color-mix(in oklab, var(--accent) 18%, transparent);
+        border-color: var(--accent);
+        color: var(--text);
       }
-      /* The resting chip is already filled, so pressing it darkens the
-         outline and the label instead of adding a surface. */
-      .tag-suggestion:not(:disabled):active {
+      /* Only the not-yet-added chip reacts — an added one already carries the
+         accent and must not have it overwritten. */
+      .tag-suggestion:not(.is-added):active {
         border-color: var(--text3);
         color: var(--text);
       }
       @media (hover: hover) and (pointer: fine) {
-        .tag-suggestion:not(:disabled):hover {
+        .tag-suggestion:not(.is-added):hover {
           border-color: var(--text3);
           color: var(--text);
         }

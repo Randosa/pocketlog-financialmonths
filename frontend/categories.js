@@ -62,11 +62,10 @@ function renderTagSuggestions() {
   const box = document.getElementById('tagSuggestions');
   if (!box) return;
   const selected = new Set(appState.form.tags.map((x) => x.toLowerCase()));
-  // Label is the bare tag name — same chip as in the picker. The "add"
-  // intent comes from the row's position under the tag field, so it only
-  // needs spelling out for screen readers. An already-added chip stays in
-  // place, greyed and disabled: it holds the layout and turns a stray second
-  // tap into a no-op instead of adding a tag the user never aimed at.
+  // Label is the bare tag name — same chip as in the picker, and the same
+  // toggle: an added chip stays in place carrying the accent, and tapping it
+  // again takes the tag off. aria-pressed is what conveys that to a screen
+  // reader; the label only has to name the action.
   // Replacing innerHTML drops the focused chip, and the one that replaces it
   // is disabled, so keyboard focus fell out of the row on every add. The row
   // is frozen, so the slot index is stable — restore focus there.
@@ -76,31 +75,24 @@ function renderTagSuggestions() {
   box.innerHTML = appState.form.suggestions
     .map((t) => {
       const added = selected.has(t.toLowerCase());
-      const label = added ? 'tags.addedSuggestionAria' : 'tags.addSuggestionAria';
-      return `<button type="button" class="tag-suggestion${added ? ' is-added' : ''}" data-add-tag="${_escAttr(t)}"${added ? ' disabled' : ''} aria-label="${_escAttr(tr(label, { name: t }))}">${_escText(t)}</button>`;
+      const label = added ? 'tags.removeAria' : 'tags.addSuggestionAria';
+      return `<button type="button" class="tag-suggestion${added ? ' is-added' : ''}" data-add-tag="${_escAttr(t)}" aria-pressed="${added}" aria-label="${_escAttr(tr(label, { name: t }))}">${_escText(t)}</button>`;
     })
     .join('');
   box.querySelectorAll('[data-add-tag]').forEach((el) => {
     el.addEventListener('click', () => addTagFromSuggestion(el.dataset.addTag));
   });
-  if (focused >= 0) {
-    const chips = [...box.children];
-    // The chip just used is disabled now — move on to the next one that is
-    // still addable, falling back to the last enabled chip before it.
-    const next =
-      chips.slice(focused).find((el) => !el.disabled) ||
-      chips
-        .slice(0, focused)
-        .reverse()
-        .find((el) => !el.disabled);
-    next?.focus();
-  }
+  // The row is frozen, so the slot the user was on still holds the same tag.
+  if (focused >= 0) box.children[focused]?.focus();
 }
 
+// Mirrors togglePickerTag: the chip is a switch, not a one-way add.
 function addTagFromSuggestion(t) {
   if (!t) return;
   const key = t.toLowerCase();
-  if (!appState.form.tags.some((x) => x.toLowerCase() === key)) appState.form.tags.push(t);
+  const i = appState.form.tags.findIndex((x) => x.toLowerCase() === key);
+  if (i >= 0) appState.form.tags.splice(i, 1);
+  else appState.form.tags.push(t);
   renderTagPills();
   renderTagSuggestions();
 }
@@ -230,7 +222,7 @@ function renderTagPickerChips() {
   box.innerHTML = filtered
     .map((t) => {
       const isSel = selected.has(t.toLowerCase());
-      return `<button type="button" class="tag-picker-chip${isSel ? ' selected' : ''}" data-pick-tag="${_escAttr(t)}">${_escText(t)}</button>`;
+      return `<button type="button" class="tag-picker-chip${isSel ? ' selected' : ''}" data-pick-tag="${_escAttr(t)}" aria-pressed="${isSel}">${_escText(t)}</button>`;
     })
     .join('');
   box.querySelectorAll('[data-pick-tag]').forEach((el) => {

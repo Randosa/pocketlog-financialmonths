@@ -310,7 +310,6 @@
     "addAria": "Add tag",
     "createAria": "Create tag",
     "addSuggestionAria": "Add tag “{name}”",
-    "addedSuggestionAria": "Tag “{name}” is already added",
     "removeAria": "Remove tag “{name}”"
   },
   "selection": {
