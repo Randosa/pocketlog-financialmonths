@@ -2512,14 +2512,10 @@
         outline: none;
         box-shadow: var(--focus-ring);
       }
-      /* Already on the booking / staged in the picker: one state, one look.
-         The accent reads at a glance where a dimmed outline did not, and the
-         chip stays interactive — tapping it again takes the tag off, exactly
-         as it does in the picker. */
-      /* Already on the booking / staged in the picker: one state, one look.
-         The suggestion-row chip is inert on top of that — it marks the tag as
-         taken and holds its slot, but the tag comes off via the pill's × in
-         the field above, not by tapping the chip again. */
+      /* Attached to the form / staged in the picker: one state, one look. The
+         accent reads at a glance where a dimmed outline did not, and the chip
+         stays interactive — with no pills anywhere, tapping it again is the
+         only way to take the tag off. */
       .tag-picker-chip.selected,
       .tag-suggestion.is-added {
         background: color-mix(in oklab, var(--accent) 18%, transparent);
