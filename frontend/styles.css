@@ -72,6 +72,10 @@
         /* Glass borders & highlights — g300-based */
         --hairline: rgba(209, 207, 197, 0.9);
         --hairline-soft: rgba(209, 207, 197, 0.55);
+        /* Chip outlines only. A chip is bounded by nothing but its line,
+           so it needs more than the hairline that edges a filled card —
+           same warm family, roughly twice the contrast (2.1:1). */
+        --chip-outline: #adaba2;
         --edge-dark: rgba(20, 20, 19, 0.07);
 
         /* Shadows */
@@ -257,6 +261,7 @@
 
         --hairline: rgba(209, 207, 197, 0.14);
         --hairline-soft: rgba(209, 207, 197, 0.07);
+        --chip-outline: #45433a;
         --edge-dark: rgba(0, 0, 0, 0.4);
 
         --shadow-soft:
@@ -2278,15 +2283,13 @@
       /* One tag chip, two placements: the picker grid and the suggestion
          row under the booking form's tag field. Same object, so the resting
          look is shared here — only the selected/added state below differs.
-         The outline is 2px rather than the usual hairline: at 1.4:1 against
-         the modal a half-pixel line cannot carry the chip's shape on its own,
-         and width buys legibility without darkening the palette. 2px and not
-         1.5px because engines quantise border-width — Chromium renders
-         0.5/1/1.5px identically as 1px, so 2px is the first real step up. */
+         Hairline width like every other edge in the app; the legibility comes
+         from --chip-outline instead, because a chip has no fill to fall back
+         on the way a card or field does. */
       .tag-picker-chip,
       .tag-suggestion {
         background: transparent;
-        border: 2px solid var(--hairline);
+        border: 0.5px solid var(--chip-outline);
         border-radius: var(--r-pill);
         padding: var(--space-10) var(--space-14);
         font-size: var(--fs-micro);
@@ -2513,11 +2516,18 @@
          The accent reads at a glance where a dimmed outline did not, and the
          chip stays interactive — tapping it again takes the tag off, exactly
          as it does in the picker. */
+      /* Already on the booking / staged in the picker: one state, one look.
+         The suggestion-row chip is inert on top of that — it marks the tag as
+         taken and holds its slot, but the tag comes off via the pill's × in
+         the field above, not by tapping the chip again. */
       .tag-picker-chip.selected,
       .tag-suggestion.is-added {
         background: color-mix(in oklab, var(--accent) 18%, transparent);
         border-color: var(--accent);
         color: var(--text);
+      }
+      .tag-suggestion.is-added {
+        cursor: default;
       }
       /* Only the not-yet-added chip reacts — an added one already carries the
          accent and must not have it overwritten. */
