@@ -2278,10 +2278,14 @@
       /* One tag chip, two placements: the picker grid and the suggestion
          row under the booking form's tag field. Same object, so the resting
          look is shared here — only the states below differ (.selected in the
-         picker, hover in the suggestion row). */
+         picker, hover in the suggestion row).
+         The chip carries a surface rather than sitting transparent on the
+         modal: a hairline at 1.4:1 barely reads on its own, while a filled
+         shape does — the same device the input fields above already use
+         (white on the grouped background). */
       .tag-picker-chip,
       .tag-suggestion {
-        background: transparent;
+        background: var(--bg-canvas);
         border: var(--border-hairline-strong);
         border-radius: var(--r-pill);
         padding: var(--space-10) var(--space-14);
@@ -2511,21 +2515,24 @@
         box-shadow: var(--focus-ring);
       }
       /* Already on the booking: the chip keeps its slot so the row cannot
-         reflow mid-tap, but recedes to tertiary and stops responding. */
+         reflow mid-tap, but drops its surface and recedes to tertiary. The
+         missing fill is what marks the state — far easier to see than the
+         hairline shade it used to rely on. */
       .tag-suggestion.is-added {
+        background: transparent;
         border-color: var(--hairline-soft);
         color: var(--text3);
         cursor: default;
       }
+      /* The resting chip is already filled, so pressing it darkens the
+         outline and the label instead of adding a surface. */
       .tag-suggestion:not(:disabled):active {
-        background: var(--bg-canvas);
-        border-color: var(--hairline);
+        border-color: var(--text3);
         color: var(--text);
       }
       @media (hover: hover) and (pointer: fine) {
         .tag-suggestion:not(:disabled):hover {
-          background: var(--bg-canvas);
-          border-color: var(--hairline);
+          border-color: var(--text3);
           color: var(--text);
         }
       }
