@@ -20,6 +20,9 @@
 //   7. Editing that booking shows its tags marked, including one that is not
 //      among the frequent ones.
 //   8. The recurring editor has the same field and row.
+//   9. The ledger's bulk picker — the one place the tag modal is still
+//      reachable — works the same way, and its staged selection reaches the
+//      marked rows on „Ubernehmen".
 const { test, expect } = require('@playwright/test');
 const { loginViaApi, bootIntoApp, expectNoRawKeys } = require('./helpers');
 
@@ -130,6 +133,18 @@ test('recurring rule editor uses the same chooser', async ({ page }) => {
   await loginViaApi(page.context());
   await bootIntoApp(page);
 
+  // Its own tag: workers share the instance, so this test must not depend on
+  // another one having populated the row first.
+  const recTag = `RecChooser${RUN}`;
+  await page.evaluate(async (name) => {
+    try {
+      await api('POST', '/tags', { name });
+    } catch (e) {
+      /* a rerun against the same instance already has it */
+    }
+    await loadTags();
+  }, recTag);
+
   await page.evaluate(() => window.openRecurringModal());
   await expect(page.locator('#recurringModalOverlay')).toHaveClass(/open/);
   await expect(page.locator('#recTagSearch')).toBeVisible();
@@ -146,5 +161,89 @@ test('recurring rule editor uses the same chooser', async ({ page }) => {
   expect(await page.evaluate(() => appState.recurring.tags)).toEqual([picked]);
 
   await expectNoRawKeys(page, 'recurring editor with tag chooser');
+  expect(pageErrors, 'no uncaught page errors').toEqual([]);
+});
+
+test('bulk picker: same one-field chooser, staged selection reaches the marked rows', async ({
+  page,
+}) => {
+  const pageErrors = [];
+  page.on('pageerror', (e) => pageErrors.push(e.message));
+
+  await loginViaApi(page.context());
+  await bootIntoApp(page);
+
+  const desc = `FlowBulkTag ${RUN}`;
+  const made = `BulkChooser${RUN}`;
+  const id = await page.evaluate(async (d) => {
+    const cats = await api('GET', '/categories');
+    const tx = await api('POST', '/transactions', {
+      amount: 4.2,
+      desc: d,
+      category_id: cats[0].id,
+      date: new Date().toISOString().slice(0, 10),
+      type: 'out',
+    });
+    await loadAndRender();
+    return tx.id;
+  }, desc);
+
+  // The long-press gesture is the ledger's own and unchanged here; what this
+  // covers is the selection bar's button and everything behind it.
+  await page.evaluate((txId) => {
+    enterSelectionMode();
+    toggleSelect(Number(txId));
+  }, id);
+  await page.click('[data-action="openBulkAddTags"]');
+  await expect(page.locator('#tagPickerOverlay')).toHaveClass(/open/);
+
+  // The separate "Neuer Tag" row with its "+" is gone; one field does both.
+  await expect(page.locator('#tagPickerNew')).toHaveCount(0);
+  await expect(page.locator('.tag-create-row')).toHaveCount(0);
+  await expect(page.locator('#tagPickerFilter')).toBeVisible();
+
+  // A name nobody has yet gets the create chip, and creating selects it.
+  await page.fill('#tagPickerFilter', made);
+  const createChip = page.locator('#tagPickerChips .tag-create');
+  await expect(createChip).toHaveCount(1);
+  await createChip.click();
+  await expect(page.locator('#tagPickerFilter')).toHaveValue('');
+  expect(await page.evaluate(() => appState.tagPicker.selection)).toEqual([made]);
+  // Selection is the chip's accent state here too, not a list somewhere else.
+  await expect(
+    page.locator('#tagPickerChips .tag-picker-chip.selected', { hasText: made }),
+  ).toHaveCount(1);
+
+  await expectNoRawKeys(page, 'bulk tag picker');
+
+  await page.click('[data-action="commitTagPicker"]');
+  await expect(page.locator('#tagPickerOverlay')).not.toHaveClass(/open/);
+
+  await expect
+    .poll(async () =>
+      page.evaluate(async (txId) => {
+        const all = await api('GET', '/transactions');
+        return all.find((t) => t.id === Number(txId))?.tags ?? [];
+      }, id),
+    )
+    .toEqual([made]);
+
+  // Remove mode offers only what is actually on the marked rows, and never
+  // the create chip — removing cannot invent a tag.
+  await page.evaluate((txId) => {
+    enterSelectionMode();
+    toggleSelect(Number(txId));
+  }, id);
+  await page.click('[data-action="openBulkRemoveTags"]');
+  await expect(page.locator('#tagPickerOverlay')).toHaveClass(/open/);
+  expect(
+    await page.$$eval('#tagPickerChips .tag-picker-chip', (els) =>
+      els.map((e) => e.textContent.trim()),
+    ),
+  ).toEqual([made]);
+  await page.fill('#tagPickerFilter', `${made}XYZ`);
+  await expect(page.locator('#tagPickerChips .tag-create')).toHaveCount(0);
+  await expect(page.locator('#tagPickerHint')).toBeVisible();
+
   expect(pageErrors, 'no uncaught page errors').toEqual([]);
 });

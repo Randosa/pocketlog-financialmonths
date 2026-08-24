@@ -251,6 +251,12 @@ function resetTagChooser(ctx) {
 //   selection      — staged tags, applied on „Übernehmen"
 //   context        — 'bulkAdd' | 'bulkRemove'
 //   bulkRemovePool — tags actually present on the marked transactions
+//
+// It works the way the chooser does: one field that searches and, when
+// adding, creates — no separate create row. The differences are inherent to
+// acting on many rows at once: the picker stages its selection behind
+// „Übernehmen" instead of writing through, and the remove mode searches only
+// the tags actually on the marked rows.
 
 function openTagPickerFor(context) {
   appState.tagPicker.context = context;
@@ -258,24 +264,16 @@ function openTagPickerFor(context) {
   // Both bulk contexts start empty: the picked tags are the ones to act on,
   // not a pre-existing selection to edit.
   appState.tagPicker.selection = [];
-  // Creating a new tag only makes sense when adding; the remove picker offers
-  // only tags already present on the selection.
   const isRemove = context === 'bulkRemove';
-  const newGroup = document.getElementById('tagPickerNewGroup');
-  if (newGroup) newGroup.style.display = isRemove ? 'none' : '';
-  // Nothing to search through yet: hide the whole "existing tags" block
-  // rather than offering a search field over zero rows and answering it with
-  // "no tags found". Creating one is the only thing to do here.
-  const existingGroup = document.getElementById('tagPickerExistingGroup');
-  if (existingGroup) {
-    const pool = isRemove ? appState.tagPicker.bulkRemovePool : appState.ledger.availableTags;
-    existingGroup.style.display = (pool || []).length === 0 ? 'none' : '';
-  }
   const title = document.getElementById('tagPickerTitle');
   if (title)
     title.textContent = isRemove ? tr('selection.removeTagTitle') : tr('selection.addTagTitle');
-  document.getElementById('tagPickerFilter').value = '';
-  document.getElementById('tagPickerNew').value = '';
+  const filter = document.getElementById('tagPickerFilter');
+  filter.value = '';
+  // Only the add mode can create, so only it says so. openBulkRemoveTags
+  // never opens the remove mode on an empty pool, so there is no case left
+  // where the field would search through nothing.
+  filter.placeholder = tr(isRemove ? 'tags.searchPlaceholder' : 'tags.searchOrCreate');
   const chips = document.getElementById('tagPickerChips');
   chips.style.minHeight = '';
   renderTagPickerChips();
@@ -308,57 +306,118 @@ function commitTagPicker() {
   if (!tags.length) return;
   bulkApply({ action: ctx === 'bulkRemove' ? 'remove_tags' : 'add_tags', tags });
 }
+// The remove picker is scoped to the tags actually on the selected rows.
+function _tagPickerSource() {
+  return appState.tagPicker.context === 'bulkRemove'
+    ? appState.tagPicker.bulkRemovePool
+    : appState.ledger.availableTags;
+}
+
 function renderTagPickerChips() {
   const box = document.getElementById('tagPickerChips');
   if (!box) return;
-  const q = (document.getElementById('tagPickerFilter').value || '').trim().toLowerCase();
-  // The remove picker is scoped to the tags actually on the selected rows.
-  const source =
-    appState.tagPicker.context === 'bulkRemove'
-      ? appState.tagPicker.bulkRemovePool
-      : appState.ledger.availableTags;
+  const isRemove = appState.tagPicker.context === 'bulkRemove';
+  const raw = document.getElementById('tagPickerFilter').value || '';
+  const q = raw.trim().toLowerCase();
+  const source = _tagPickerSource();
   const filtered = q ? source.filter((t) => t.toLowerCase().includes(q)) : source;
   const selected = new Set(appState.tagPicker.selection.map((x) => x.toLowerCase()));
-  box.innerHTML = filtered
-    .map((t) => {
-      const isSel = selected.has(t.toLowerCase());
-      return `<button type="button" class="tag-picker-chip${isSel ? ' selected' : ''}" data-pick-tag="${_escAttr(t)}" aria-pressed="${isSel}">${_escText(t)}</button>`;
-    })
-    .join('');
+  const full = appState.tagPicker.selection.length >= MAX_TAGS_PER_TX;
+  const chips = filtered.map((t) => {
+    const isSel = selected.has(t.toLowerCase());
+    return `<button type="button" class="tag-picker-chip${isSel ? ' selected' : ''}" data-pick-tag="${_escAttr(t)}" aria-pressed="${isSel}">${_escText(t)}</button>`;
+  });
+  // Same offer the booking form makes: a name nobody has yet becomes a chip
+  // that creates it, typed once instead of again in a separate field. It goes
+  // last, so an existing match stays the first thing under the finger.
+  const name = isRemove ? '' : _normaliseNewTag(raw);
+  const exact = name && source.some((t) => t.toLowerCase() === name.toLowerCase());
+  if (name && !exact && !full) {
+    chips.push(
+      `<button type="button" class="tag-picker-chip tag-create" data-pick-create="${_escAttr(name)}">${_escText(tr('tags.createChip', { name }))}</button>`,
+    );
+  }
+  box.innerHTML = chips.join('');
   box.querySelectorAll('[data-pick-tag]').forEach((el) => {
     el.addEventListener('click', () => togglePickerTag(el.dataset.pickTag));
   });
+  box.querySelectorAll('[data-pick-create]').forEach((el) => {
+    el.addEventListener('click', () => createTagFromPicker(el.dataset.pickCreate));
+  });
+
+  const hint = document.getElementById('tagPickerHint');
+  if (!hint) return;
+  // The server caps a transaction's tag list, so refuse the 21st here rather
+  // than letting „Übernehmen" come back as a 422 nobody can read.
+  const message = full
+    ? tr('tags.limitReached', { max: MAX_TAGS_PER_TX })
+    : q && !chips.length
+      ? tr('tags.searchNone')
+      : '';
+  hint.textContent = message;
+  hint.hidden = !message;
 }
 function togglePickerTag(t) {
   const i = appState.tagPicker.selection.findIndex((x) => x.toLowerCase() === t.toLowerCase());
   if (i >= 0) appState.tagPicker.selection.splice(i, 1);
-  else appState.tagPicker.selection.push(t);
+  else if (appState.tagPicker.selection.length >= MAX_TAGS_PER_TX) {
+    renderTagPickerChips(); // surfaces the limit hint, adds nothing
+    return;
+  } else appState.tagPicker.selection.push(t);
   renderTagPickerChips();
 }
-function handleTagPickerNew(e) {
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    addTagFromPicker();
-  }
+
+// Back to the unfiltered grid, where the freshly picked tag is visible as a
+// selected chip.
+function _clearTagPickerQuery() {
+  const filter = document.getElementById('tagPickerFilter');
+  if (filter) filter.value = '';
+  renderTagPickerChips();
 }
-function addTagFromPicker() {
-  const inp = document.getElementById('tagPickerNew');
-  const val = inp.value.trim();
-  if (!val) return;
-  const key = val.toLowerCase();
-  const existing = appState.ledger.availableTags.find((t) => t.toLowerCase() === key);
-  const name = existing || val;
-  if (!existing) {
+
+function createTagFromPicker(raw) {
+  const name = _normaliseNewTag(raw);
+  if (!name) return;
+  if (appState.tagPicker.selection.length >= MAX_TAGS_PER_TX) {
+    renderTagPickerChips();
+    return;
+  }
+  // In memory only. The tag row is written when the bulk action runs
+  // (crud._resolve_tags_cached creates what is missing), so closing without
+  // „Übernehmen" leaves no orphan behind.
+  if (!appState.ledger.availableTags.some((t) => t.toLowerCase() === name.toLowerCase())) {
     appState.ledger.availableTags.push(name);
     appState.ledger.availableTags.sort((a, b) =>
       a.localeCompare(b, undefined, { sensitivity: 'base' }),
     );
   }
-  if (!appState.tagPicker.selection.some((x) => x.toLowerCase() === key)) {
+  if (!appState.tagPicker.selection.some((x) => x.toLowerCase() === name.toLowerCase())) {
     appState.tagPicker.selection.push(name);
   }
-  inp.value = '';
-  renderTagPickerChips();
+  _clearTagPickerQuery();
+}
+
+// Enter is additive only: it picks an exact match or creates the typed name.
+// Taking one back off is a deliberate tap on the accent chip.
+function handleTagPickerKey(value, e) {
+  if (!e || e.key !== 'Enter') return;
+  e.preventDefault();
+  const name = _normaliseNewTag(value);
+  if (!name) return;
+  const exact = _tagPickerSource().find((t) => t.toLowerCase() === name.toLowerCase());
+  if (!exact) {
+    // Nothing to create when removing — that can only touch existing tags.
+    if (appState.tagPicker.context !== 'bulkRemove') createTagFromPicker(name);
+    return;
+  }
+  if (!appState.tagPicker.selection.some((x) => x.toLowerCase() === exact.toLowerCase())) {
+    if (appState.tagPicker.selection.length >= MAX_TAGS_PER_TX) {
+      renderTagPickerChips();
+      return;
+    }
+    appState.tagPicker.selection.push(exact);
+  }
+  _clearTagPickerQuery();
 }
 
 function renderCategories() {
