@@ -301,7 +301,6 @@
     "deleteConfirm": "Tag wirklich löschen?",
     "deleteRemoves": "Der Tag wird aus allen Buchungen entfernt.",
     "none": "Noch keine Tags vorhanden.",
-    "pickTitle": "Tag wählen",
     "newLabel": "Neuen Tag anlegen",
     "newPlaceholder": "Neuer Tag",
     "existing": "Vorhandene Tags",

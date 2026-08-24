@@ -301,7 +301,6 @@
     "deleteConfirm": "Really delete this tag?",
     "deleteRemoves": "The tag will be removed from all transactions.",
     "none": "No tags yet.",
-    "pickTitle": "Choose tag",
     "newLabel": "Create new tag",
     "newPlaceholder": "New tag",
     "existing": "Existing tags",
