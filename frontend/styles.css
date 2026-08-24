@@ -2237,11 +2237,26 @@
         min-width: 0;
       }
 
+      /* Both sit in a column of text fields, so they take the field look
+         rather than .search-wrap's floating capsule: that one belongs to the
+         bottom bar, where it actually floats over the ledger. In a modal the
+         blur has nothing to blur, the elevation reads as a stray shadow among
+         flat fields, and 45%-white over the modal ground is visibly greyer
+         than the canvas fill beside it. */
       .tag-picker-search,
       .tag-chooser-search {
-        height: var(--btn-fab-size);
+        /* Same box as .form-group input — see the min-height there. */
+        height: calc(2 * var(--space-14) + 1.2 * var(--fs-body));
         padding: 0 var(--space-16);
         margin-bottom: var(--space-12);
+        background: var(--bg-canvas);
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+        border-radius: var(--r-md);
+      }
+      /* Focus keeps the .search-wrap ring; only the resting elevation goes. */
+      :is(.tag-picker-search, .tag-chooser-search):not(:focus-within) {
+        box-shadow: none;
       }
       .tag-chooser-search {
         margin-bottom: var(--space-10);
