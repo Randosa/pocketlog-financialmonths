@@ -249,6 +249,7 @@ async function _afterAuthSuccess(me) {
 // boot-error banner (tap = retry); retryBoot also re-arms on online/visible
 // (listeners in init).
 async function _loadBootData(me) {
+  appState.boot.ready = false;
   try {
     await loadCategories({ rethrow: true });
   } catch (e) {
@@ -266,7 +267,10 @@ async function _loadBootData(me) {
   await loadRecurringRules();
   await loadAndRender();
   _setBootError(false);
-  showPanel(loadDefaultView());
+  // Not a navigation: the auth overlay came down at the top of
+  // _afterAuthSuccess, so the menu has been tappable for the whole load chain
+  // above. Restoring the panel must not shut a drawer the user just opened.
+  showPanel(loadDefaultView(), { keepDrawer: true });
   updateSyncBadge();
   updateFailedNotice();
   reconcileSettingsFromServer();
@@ -282,6 +286,7 @@ async function _loadBootData(me) {
         : tr('recurring.materializedBanner', { count: n }),
     );
   }
+  appState.boot.ready = true;
 }
 
 function _setBootError(failed) {

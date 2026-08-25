@@ -683,7 +683,10 @@ const PANELS = {
   recurring: { bodyClass: 'on-recurring', render: () => renderRecurringView() },
 };
 
-function showPanel(id) {
+// `opts.keepDrawer` is for the one caller that is not a navigation: boot's own
+// panel restore. Everything else lands here because the user picked a
+// destination, and the drawer they picked it from has to get out of the way.
+function showPanel(id, opts) {
   if (
     appState.nav.searchQuery ||
     appState.nav.categoryFilterId != null ||
@@ -703,7 +706,7 @@ function showPanel(id) {
   });
   const cfg = PANELS[id];
   if (cfg && cfg.render) cfg.render();
-  closeDrawer();
+  if (!opts || !opts.keepDrawer) closeDrawer();
 }
 
 // Called from the "Reports" drawer subpanel. Sets the active report
@@ -816,10 +819,18 @@ function openDrawer() {
   document.getElementById('drawer').classList.add('open');
   document.getElementById('drawerOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
-  // Before trapFocusIn: the trap moves focus inside, which an inert
-  // subtree would refuse.
+  // Before the focus move: an inert subtree refuses focus.
   _syncDrawerInert();
   trapFocusIn(document.getElementById('drawer'), 'drawer');
+  // The trap only wraps around once focus is already inside — it listens on
+  // the drawer itself. Opening from the hamburger leaves focus on that button,
+  // outside and *after* the drawer in document order, so tabbing went into the
+  // page behind the menu. Move it in, which is what aria-modal promises. The
+  // timeout lets the slide-in start first, matching the modal shells.
+  setTimeout(() => {
+    const first = document.querySelector('#drawer .drawer-close-btn');
+    if (first && document.getElementById('drawer').classList.contains('open')) first.focus();
+  }, 200);
 }
 
 function closeDrawer() {

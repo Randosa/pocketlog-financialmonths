@@ -91,9 +91,7 @@ async function bootIntoApp(page) {
   // Polled via evaluate + toPass: waitForFunction needs eval, which the
   // app's CSP (script-src 'self') forbids.
   await expect(async () => {
-    const ready = await page.evaluate(
-      () => !!window._csrfToken && appState.ledger.categories.length > 0,
-    );
+    const ready = await page.evaluate(() => !!window._csrfToken && appState.boot.ready);
     expect(ready).toBeTruthy();
   }).toPass({ timeout: 15000, intervals: [100, 250, 500] });
 }
