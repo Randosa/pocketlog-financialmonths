@@ -8,10 +8,16 @@
 // categories. Falls back to the alphabetically first option when no valid
 // category is requested (e.g. creating), so the preselection matches the top
 // of the list rather than the unsorted seed order.
-function _populateCategorySelect(sel, selectedId) {
-  const sorted = [...appState.ledger.categories].sort((a, b) =>
-    a.name.localeCompare(b.name, _locale(), { sensitivity: 'base' }),
-  );
+//
+// `takenIds` (optional Set) drops categories the caller cannot use: goals and
+// budgets are 1:1 with a category (uq_goals_user_category / the budgets twin),
+// so offering an occupied one only buys the user a 409 after they hit Save.
+// The category being edited stays listed even when it is in the set — it is
+// occupied by this very record.
+function _populateCategorySelect(sel, selectedId, takenIds) {
+  const sorted = [...appState.ledger.categories]
+    .filter((c) => !takenIds || c.id === selectedId || !takenIds.has(c.id))
+    .sort((a, b) => a.name.localeCompare(b.name, _locale(), { sensitivity: 'base' }));
   const effectiveId = sorted.some((c) => c.id === selectedId)
     ? selectedId
     : sorted[0] && sorted[0].id;

@@ -236,8 +236,16 @@ function renderTransactions(txs, el = document.getElementById('transactionList')
         list
           .map((t) => {
             const cat = getCatById(t.category_id);
+            // The chip is a shortcut into its own tag, not decoration: the
+            // drill-down it triggers is the same one the tag analysis uses.
+            // Pointer activation is routed through the row's gesture handler
+            // (see attachSwipeHandlers) because a click listener here would
+            // fire *after* the row's pointerup already opened the booking.
             const tagsHtml = (t.tags || [])
-              .map((tg) => `<span class="t-tag">${_escText(tg)}</span>`)
+              .map(
+                (tg) =>
+                  `<span class="t-tag" role="button" tabindex="0" data-tag="${_escAttr(tg)}" aria-label="${_escAttr(tr('tx.tagFilterAria', { name: tg }))}">${_escText(tg)}</span>`,
+              )
               .join('');
             const note = (t.desc || '').trim();
             // Badge sits as a sibling of .t-note inside .t-info,
@@ -269,6 +277,14 @@ function renderTransactions(txs, el = document.getElementById('transactionList')
     })
     .join('');
   attachSwipeHandlers(el);
+  // Keyboard half of the tag chip. The pointer half lives in the row's
+  // gesture handler; only Enter/Space needs its own listener, and it must
+  // not be a click listener (see the chip markup above).
+  el.querySelectorAll('.t-tag').forEach((chip) => {
+    chip.addEventListener('keydown', (e) =>
+      handleRowActivate(e, () => showTransactionsForTag(chip.dataset.tag)),
+    );
+  });
 }
 
 function renderCategoryView() {
@@ -336,6 +352,19 @@ async function showTransactionsForCategory(catId) {
   await _setSearchPanelActive(true);
 }
 
+// Tag twin of showTransactionsForCategory, reached by tapping a tag chip on a
+// booking row. Same exact-match path the tag analysis drills through
+// (appState.nav.tagFilterName), so a tag named like a note never pulls in
+// substring matches. Clears the category filter because applySearch checks
+// that one first — a stale id would silently mask this filter.
+async function showTransactionsForTag(name) {
+  appState.nav.categoryFilterId = null;
+  appState.nav.tagFilterName = name;
+  appState.nav.searchQuery = '';
+  document.getElementById('searchInput').value = name;
+  await _setSearchPanelActive(true);
+}
+
 // ── SWIPE-TO-DELETE ───────────────────────────────────────────────────────────
 // Must match the CSS token --swipe-action-w. The CSS owns the visible
 // delete-button width; this constant clamps the drag to the same value
@@ -362,6 +391,7 @@ function attachSwipeHandlers(container) {
       committedAxis = null, // 'x' once we've decided the gesture is a swipe
       openOnStart = false,
       moved = false, // moved past the tap slop (any axis) — used in select mode
+      startTarget = null, // what the finger went down on — routes a tap on a tag
       longPressTimer = null, // pending "enter multi-select" timer
       longPressFired = false; // the timer already toggled this row's selection
 
@@ -379,6 +409,7 @@ function attachSwipeHandlers(container) {
       dx = 0;
       dragging = true;
       moved = false;
+      startTarget = e.target;
       committedAxis = null;
       longPressFired = false;
       openOnStart = row.classList.contains('swiped');
@@ -466,7 +497,12 @@ function attachSwipeHandlers(container) {
           row.classList.remove('swiped');
         } else {
           closeAllSwipes();
-          editTransaction(Number(row.dataset.id));
+          // A tag chip is the one sub-target inside the row that means
+          // something on its own — a tap there filters by that tag instead
+          // of opening the booking. Everything else stays "tap = edit".
+          const chip = startTarget && startTarget.closest('.t-tag');
+          if (chip) showTransactionsForTag(chip.dataset.tag);
+          else editTransaction(Number(row.dataset.id));
         }
       } else {
         row.classList.remove('swiped');

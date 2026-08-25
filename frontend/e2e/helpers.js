@@ -110,4 +110,18 @@ async function gotoPanel(page, id) {
   }).toPass({ timeout: 15000, intervals: [200, 500, 1000] });
 }
 
-module.exports = { ADMIN_USER, ADMIN_PASS, loginViaApi, bootIntoApp, expectNoRawKeys, gotoPanel };
+// Visible labels of a <select>, in order. The goal and budget pickers hide the
+// categories that already carry one, so what the list *omits* is the assertion.
+function selectLabels(page, id) {
+  return page.$$eval(`#${id} option`, (els) => els.map((e) => e.textContent.trim()));
+}
+
+module.exports = {
+  ADMIN_USER,
+  ADMIN_PASS,
+  loginViaApi,
+  bootIntoApp,
+  expectNoRawKeys,
+  gotoPanel,
+  selectLabels,
+};

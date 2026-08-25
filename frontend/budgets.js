@@ -99,14 +99,27 @@ function _budgetAmountValue(id) {
   return parseAmount(document.getElementById(id).value);
 }
 
+// Categories that already carry a budget. `exceptId` keeps the budget being
+// edited out of its own way, so its category stays selectable.
+function _budgetTakenCategoryIds(exceptId) {
+  return new Set(appState.budgets.list.filter((b) => b.id !== exceptId).map((b) => b.category_id));
+}
+
 function populateBudgetCategorySelect(selectedId) {
   const sel = document.getElementById('budgetEditCategory');
-  if (sel) _populateCategorySelect(sel, selectedId);
+  if (sel)
+    _populateCategorySelect(sel, selectedId, _budgetTakenCategoryIds(appState.budgets.editingId));
 }
 
 function openBudgetModal(id) {
   if (!appState.ledger.categories.length) {
     toast(tr('budget.needCategory'), 'error');
+    return;
+  }
+  // Every category already has a budget — the modal would open on an empty
+  // picker and could only ever fail. Say so instead.
+  if (!id && _budgetTakenCategoryIds(null).size >= appState.ledger.categories.length) {
+    toast(tr('budget.allCategoriesTaken'), 'error');
     return;
   }
   const deleteBtn = document.getElementById('budgetDeleteBtn');
