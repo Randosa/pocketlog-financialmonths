@@ -979,15 +979,6 @@ function releaseFocusTrap(key) {
   _modalTrapTeardown.delete(key);
 }
 
-// Shared open/close tail for the edit modals (goals, budgets, recurring).
-// openModalShell: call AFTER the modal's fields are populated — it records the
-// previously focused element, reveals the overlay, locks body scroll, moves
-// focus to the first field once the open transition starts, and arms the Tab
-// focus-trap. closeModalShell reverses it. `key` is the focus-trap/restore
-// bucket, `overlayId` the .modal-overlay element, `focusId` the field to focus
-// on open. Per-modal state resets (e.g. editingId) stay in the caller. (Named
-// *Shell to avoid colliding with booking.js's own openModal/closeModal, which
-// share this global script scope.)
 // Focus a field once the container it lives in has opened. The delay is for
 // the slide-in — focusing mid-animation makes iOS scroll the field around —
 // but it is also long enough for a fast tap, and an unconditional focus() then
@@ -1007,6 +998,15 @@ function focusOnOpen(root, target, delay) {
   }, delay);
 }
 
+// Shared open/close tail for the edit modals (goals, budgets, recurring).
+// openModalShell: call AFTER the modal's fields are populated — it records the
+// previously focused element, reveals the overlay, locks body scroll, moves
+// focus to the first field once the open transition starts, and arms the Tab
+// focus-trap. closeModalShell reverses it. `key` is the focus-trap/restore
+// bucket, `overlayId` the .modal-overlay element, `focusId` the field to focus
+// on open. Per-modal state resets (e.g. editingId) stay in the caller. (Named
+// *Shell to avoid colliding with booking.js's own openModal/closeModal, which
+// share this global script scope.)
 function openModalShell(key, overlayId, focusId) {
   rememberModalFocus(key);
   document.getElementById(overlayId).classList.add('open');
