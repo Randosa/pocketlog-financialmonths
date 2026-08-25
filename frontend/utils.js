@@ -133,6 +133,21 @@ function _recurringNextOccurrence(frequency, interval, after, weekday, dom) {
   return { y: ny, m: nm, d: _recurringClampDay(ny, nm, day) };
 }
 
+// --- Booking defaults -------------------------------------------------------
+
+// The date a new booking starts on.
+//
+// Today, as long as the ledger is showing the current month. Browsing an
+// earlier month is how you add something you forgot, and defaulting to today
+// there put the booking in a month you were not looking at: the app reported
+// "saved" and nothing appeared. So the day is placed inside the month on
+// screen instead, clamped because the 31st does not exist in June.
+//
+// `viewMonth` is zero-based, matching appState.view.month and the Date API.
+function _defaultBookingDate(viewYear, viewMonth, today) {
+  return _iso(viewYear, viewMonth, Math.min(today.getDate(), _daysInMonth(viewYear, viewMonth)));
+}
+
 // --- Suggestion ranking -----------------------------------------------------
 
 // Ordering shared by the tag and the category chooser. Both show only their
@@ -367,6 +382,7 @@ if (typeof module !== 'undefined' && module.exports) {
     _parseAmountWith,
     _formatAmountWith,
     _compareUsage,
+    _defaultBookingDate,
     _filterTransactions,
     _passwordErrorKey,
     _importReport,

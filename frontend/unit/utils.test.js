@@ -13,6 +13,7 @@ const {
   _parseAmountWith,
   _formatAmountWith,
   _compareUsage,
+  _defaultBookingDate,
   _filterTransactions,
   _passwordErrorKey,
   _importReport,
@@ -635,5 +636,37 @@ describe('_compareUsage', () => {
     expect(_compareUsage(undefined, use(1, 0, 1), 'out')).toBeGreaterThan(0);
     expect(_compareUsage({}, {}, 'in')).toBe(0);
     expect(_compareUsage({ all: 'x', out: null }, use(0, 0, 0), 'out')).toBe(0);
+  });
+});
+
+describe('_defaultBookingDate', () => {
+  // Month is zero-based, like appState.view.month and the Date API.
+  const AUG_25 = new Date(2026, 7, 25);
+
+  it('is today while the ledger shows the current month', () => {
+    expect(_defaultBookingDate(2026, 7, AUG_25)).toBe('2026-08-25');
+  });
+
+  it('stays inside the month being browsed', () => {
+    // The regression: this used to return today, so a booking added while
+    // browsing June landed in August and vanished from the view that
+    // reported it saved.
+    expect(_defaultBookingDate(2026, 5, AUG_25)).toBe('2026-06-25');
+    expect(_defaultBookingDate(2025, 11, AUG_25)).toBe('2025-12-25');
+  });
+
+  it('works forwards as well as backwards', () => {
+    expect(_defaultBookingDate(2026, 9, AUG_25)).toBe('2026-10-25');
+  });
+
+  it('clamps a day the target month does not have', () => {
+    const jan31 = new Date(2026, 0, 31);
+    expect(_defaultBookingDate(2026, 1, jan31)).toBe('2026-02-28'); // Feb, common year
+    expect(_defaultBookingDate(2024, 1, jan31)).toBe('2024-02-29'); // Feb, leap year
+    expect(_defaultBookingDate(2026, 3, jan31)).toBe('2026-04-30'); // 30-day month
+  });
+
+  it('pads month and day to two digits', () => {
+    expect(_defaultBookingDate(2026, 0, new Date(2026, 0, 5))).toBe('2026-01-05');
   });
 });

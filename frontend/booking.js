@@ -8,7 +8,8 @@ function openModal(tx) {
   document.getElementById('inputAmount').value =
     tx?.amount != null ? _formatAmountInput(Number(tx.amount)) : '';
   document.getElementById('inputDesc').value = tx?.desc || '';
-  document.getElementById('inputDate').value = tx?.date || new Date().toISOString().split('T')[0];
+  document.getElementById('inputDate').value =
+    tx?.date || _defaultBookingDate(appState.view.year, appState.view.month, new Date());
   // Before setType: it re-ranks both choosers, and the category chooser has
   // to know the current selection before it decides what to put first.
   resetCatChooser('transaction', tx ? tx.category_id : null);

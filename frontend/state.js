@@ -17,8 +17,10 @@
 // The module.exports guard at the bottom is a no-op in the browser.
 
 const appState = {
-  // Currently displayed period in the transactions view (also seeds the date
-  // of a new booking). currentMonth / currentYear.
+  // Currently displayed period in the transactions view. Also seeds the date
+  // of a new booking (_defaultBookingDate), so adding one while browsing an
+  // earlier month lands it in that month rather than silently in today's.
+  // currentMonth / currentYear.
   view: {
     month: new Date().getMonth(),
     year: new Date().getFullYear(),
