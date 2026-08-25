@@ -30,7 +30,7 @@ function openModal(tx) {
   remeasureCatChooser('transaction');
   appState.nav.bookingModalOpenedAt = Date.now();
   document.body.style.overflow = 'hidden';
-  setTimeout(() => document.getElementById('inputAmount').focus(), 300);
+  focusOnOpen(document.getElementById('modalOverlay'), 'inputAmount', 300);
   document.getElementById('modalOverlay').dataset.editId = tx?.id || '';
   // Baseline for the unsaved-changes check in closeModal.
   appState.form.pristine = _bookingFormSnapshot();

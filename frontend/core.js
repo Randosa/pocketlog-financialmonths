@@ -635,7 +635,7 @@ function confirmAction({
     document.body.style.overflow = 'hidden';
     yes.addEventListener('click', () => close(true));
     no.addEventListener('click', () => close(false));
-    setTimeout(() => no.focus(), 50);
+    focusOnOpen(overlay, no, 50);
   });
 }
 
@@ -827,10 +827,11 @@ function openDrawer() {
   // outside and *after* the drawer in document order, so tabbing went into the
   // page behind the menu. Move it in, which is what aria-modal promises. The
   // timeout lets the slide-in start first, matching the modal shells.
-  setTimeout(() => {
-    const first = document.querySelector('#drawer .drawer-close-btn');
-    if (first && document.getElementById('drawer').classList.contains('open')) first.focus();
-  }, 200);
+  focusOnOpen(
+    document.getElementById('drawer'),
+    document.querySelector('#drawer .drawer-close-btn'),
+    200,
+  );
 }
 
 function closeDrawer() {
@@ -987,11 +988,30 @@ function releaseFocusTrap(key) {
 // on open. Per-modal state resets (e.g. editingId) stay in the caller. (Named
 // *Shell to avoid colliding with booking.js's own openModal/closeModal, which
 // share this global script scope.)
+// Focus a field once the container it lives in has opened. The delay is for
+// the slide-in — focusing mid-animation makes iOS scroll the field around —
+// but it is also long enough for a fast tap, and an unconditional focus() then
+// lands on the wrong control: the keystrokes the user has already started
+// typing into the field they picked get appended to this one instead. So the
+// claim is dropped as soon as anything inside `root` already has focus.
+//
+// A container that closed again inside the delay needs no check of its own: a
+// modal overlay is display:none by then, the drawer is inert, and a dialog
+// built on the fly is gone from the document — none of them accept focus.
+function focusOnOpen(root, target, delay) {
+  setTimeout(() => {
+    if (!root || !root.isConnected) return;
+    if (root.contains(document.activeElement)) return;
+    const el = typeof target === 'string' ? document.getElementById(target) : target;
+    if (el) el.focus();
+  }, delay);
+}
+
 function openModalShell(key, overlayId, focusId) {
   rememberModalFocus(key);
   document.getElementById(overlayId).classList.add('open');
   document.body.style.overflow = 'hidden';
-  setTimeout(() => document.getElementById(focusId).focus(), 200);
+  focusOnOpen(document.getElementById(overlayId), focusId, 200);
   trapFocusIn(document.querySelector('#' + overlayId + ' .modal'), key);
 }
 

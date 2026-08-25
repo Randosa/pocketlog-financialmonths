@@ -49,7 +49,7 @@ function openTagModal(name) {
   }
   document.getElementById('tagModalOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
-  setTimeout(() => document.getElementById('tagEditName').focus(), 200);
+  focusOnOpen(document.getElementById('tagModalOverlay'), 'tagEditName', 200);
   trapFocusIn(document.querySelector('#tagModalOverlay .modal'), 'tag');
 }
 
@@ -429,7 +429,7 @@ async function openFailedRecovery() {
 
   document.body.appendChild(overlay);
   document.body.style.overflow = 'hidden';
-  setTimeout(() => retry.focus(), 50);
+  focusOnOpen(overlay, retry, 50);
 }
 
 // Push the dead-lettered writes back into the outbox and replay them. With the
@@ -1490,7 +1490,7 @@ function openChangePasswordModal() {
   _setAuthError('pwModalError', '');
   document.getElementById('pwModalOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
-  setTimeout(() => document.getElementById('pwModalCurrent')?.focus(), 50);
+  focusOnOpen(document.getElementById('pwModalOverlay'), 'pwModalCurrent', 50);
 }
 function closePwModal() {
   document.getElementById('pwModalOverlay').classList.remove('open');
@@ -1631,7 +1631,7 @@ function openAdminCreateUserModal() {
   _setAuthError('adminCreateError', '');
   document.getElementById('adminCreateUserOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
-  setTimeout(() => document.getElementById('adminCreateUsername')?.focus(), 50);
+  focusOnOpen(document.getElementById('adminCreateUserOverlay'), 'adminCreateUsername', 50);
 }
 function closeAdminCreateUserModal() {
   document.getElementById('adminCreateUserOverlay').classList.remove('open');
@@ -1677,7 +1677,7 @@ function openAdminResetPwModal(userId) {
   _setAuthError('adminResetPwError', '');
   document.getElementById('adminResetPwOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
-  setTimeout(() => document.getElementById('adminResetPwInput')?.focus(), 50);
+  focusOnOpen(document.getElementById('adminResetPwOverlay'), 'adminResetPwInput', 50);
 }
 function closeAdminResetPwModal() {
   document.getElementById('adminResetPwOverlay').classList.remove('open');

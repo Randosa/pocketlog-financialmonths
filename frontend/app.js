@@ -226,7 +226,7 @@ async function _afterAuthSuccess(me) {
     // the field would be a UI lie. The user only sets a new password
     // plus its confirmation.
     _showAuthView('forcePw');
-    setTimeout(() => document.getElementById('forcePwNew')?.focus(), 50);
+    focusOnOpen(document.getElementById('forcePwView'), 'forcePwNew', 50);
     return;
   }
   _showAuthView(null);
@@ -462,7 +462,7 @@ async function init() {
 
   if (!me) {
     _showAuthView('login');
-    setTimeout(() => document.getElementById('loginUsername')?.focus(), 50);
+    focusOnOpen(document.getElementById('loginView'), 'loginUsername', 50);
     return;
   }
   window._csrfToken = me.csrf_token;
