@@ -31,6 +31,18 @@ const openTagPanel = async (page) => {
 
 const rowCount = (page) => page.locator('#tagList .cat-pill-edit').count();
 
+// Distance from the "create" button to whatever follows it. The list is not
+// the button's adjacent sibling any more — the filter field sits between them
+// — so the gap comes from a different rule in each state and zero in one of
+// them is a real regression, not a cosmetic one.
+const gapBelowCreateButton = (page) =>
+  page.evaluate(() => {
+    const btn = document.querySelector('#dpTags .save-btn');
+    const wrap = document.getElementById('dpTagSearchWrap');
+    const next = wrap.hidden ? document.getElementById('tagList') : wrap;
+    return next.getBoundingClientRect().top - btn.getBoundingClientRect().bottom;
+  });
+
 test('drawer tag list: filter appears with the list, and rows work by keyboard', async ({
   page,
 }) => {
@@ -58,6 +70,7 @@ test('drawer tag list: filter appears with the list, and rows work by keyboard',
 
   await openTagPanel(page);
   await expect(page.locator('#dpTagSearchWrap')).toBeVisible();
+  expect(await gapBelowCreateButton(page), 'gap with the field shown').toBeGreaterThan(0);
   const total = await rowCount(page);
   expect(total).toBeGreaterThan(10);
 
@@ -103,6 +116,9 @@ test('drawer tag list: filter appears with the list, and rows work by keyboard',
   await openTagPanel(page);
   await expect(page.locator('#dpTagSearchWrap')).toBeHidden();
   expect(await page.evaluate(() => appState.drawer.filter.tags)).toBe('');
+  // The list must not butt against the button now that the hidden field
+  // contributes no margin of its own.
+  expect(await gapBelowCreateButton(page), 'gap with the field hidden').toBeGreaterThan(0);
 
   expect(pageErrors, 'no uncaught page errors').toEqual([]);
 });

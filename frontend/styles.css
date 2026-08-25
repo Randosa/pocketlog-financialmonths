@@ -3440,10 +3440,14 @@
       .drawer-section > .save-btn:first-child {
         margin-top: 0;
       }
-      /* Spacing between top button and whatever follows it — the filter field
-         when the list is long enough to show one, otherwise the list itself. */
+      /* Spacing between the top button and whatever follows it. The list is no
+         longer the button's adjacent sibling — the filter field sits between
+         them — so it needs its own case for when that field is hidden, where
+         display:none takes the field's margin-bottom with it. The first
+         selector still covers a section that has no filter field at all. */
       .drawer-section .save-btn + .drawer-chip-list,
-      .drawer-section .save-btn + .drawer-search {
+      .drawer-section .save-btn + .drawer-search,
+      .drawer-section .drawer-search[hidden] + .drawer-chip-list {
         margin-top: var(--space-12);
       }
       /* [hidden] has to beat .search-wrap's display:flex. */
