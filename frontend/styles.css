@@ -2495,12 +2495,15 @@
         outline: none;
         box-shadow: var(--focus-ring);
       }
-      /* Attached to the form / staged in the picker: one state, one look. The
-         accent reads at a glance where a dimmed outline did not, and the chip
-         stays interactive — with no pills anywhere, tapping it again is the
-         only way to take the tag off. */
+      /* Attached to the form / staged in the picker / active in the trend
+         report: one state, one look. The accent reads at a glance where a
+         dimmed outline did not, and the chip stays interactive — with no pills
+         anywhere, tapping it again is the only way to take the tag off. The
+         trend chip joins here rather than restating the same color-mix; it
+         keeps its bolder label below. */
       .tag-picker-chip.selected,
-      .tag-suggestion.is-added {
+      .tag-suggestion.is-added,
+      .trend-chip.is-selected {
         background: color-mix(in oklab, var(--accent) 18%, transparent);
         border-color: var(--accent);
         color: var(--text);
@@ -3168,6 +3171,12 @@
         flex-direction: column;
         gap: var(--space-12);
       }
+      /* Tinted pill on purpose: it sits inside a white card directly under the
+         segmented control and borrows its shape and fill, so a canvas-filled
+         field would both clash with that control and vanish against the card.
+         What it does drop is the floating chrome the base .search-wrap carries
+         for the bottom bar — inside a card there is nothing to float over and
+         nothing to blur, and backdrop-filter costs a compositing layer. */
       .trend-picker-open .search-wrap {
         background: var(--surface-tint);
         border-radius: var(--r-pill);
@@ -3176,6 +3185,11 @@
         gap: var(--space-8);
         padding: 0 var(--space-12);
         min-height: var(--btn-chrome-size);
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+      }
+      .trend-picker-open .search-wrap:not(:focus-within) {
+        box-shadow: none;
       }
       .trend-picker-open .search-wrap .ui-icon {
         width: 16px;
@@ -3198,7 +3212,14 @@
         align-items: center;
         gap: var(--space-8);
         background: transparent;
-        border: var(--border-hairline-strong);
+        /* --chip-outline, not a hairline: a chip is bounded by nothing but its
+           line, so it needs the stronger tone every other tag chip uses.
+           Measured against the card behind it, this lifts 1.49:1 -> 2.30:1 in
+           light. Dark gains far less (1.40 -> 1.67): a low-alpha light hairline
+           over a dark ground still composites well clear of it, so the raw
+           0.14 alpha overstates how faint it looked. Raising the dark token
+           would change every chip in the app, not just these. */
+        border: 0.5px solid var(--chip-outline);
         border-radius: var(--r-pill);
         padding: var(--space-8) var(--space-12);
         font-size: var(--fs-footnote);
@@ -3214,9 +3235,8 @@
         border-radius: var(--r-pill);
         flex-shrink: 0;
       }
+      /* Background and border come from the shared selected-chip rule. */
       .trend-chip.is-selected {
-        background: color-mix(in oklab, var(--accent) 18%, transparent);
-        border-color: var(--accent);
         font-weight: 600;
       }
       .trend-chip:focus-visible {

@@ -150,6 +150,7 @@
     "emptyView": "No categories yet.",
     "emptyViewHint": "Create categories in Settings.",
     "editAria": "Edit category “{name}”",
+    "addTxAria": "Add transaction in “{name}”",
     "viewTxAria": "View transactions in “{name}”"
   },
   "goals": {

@@ -150,6 +150,7 @@
     "emptyView": "Keine Kategorien vorhanden.",
     "emptyViewHint": "Erstelle Kategorien in den Einstellungen.",
     "editAria": "Kategorie „{name}“ bearbeiten",
+    "addTxAria": "Buchung in „{name}“ anlegen",
     "viewTxAria": "Buchungen in „{name}“ ansehen"
   },
   "goals": {
