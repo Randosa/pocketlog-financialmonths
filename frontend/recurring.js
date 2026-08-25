@@ -184,8 +184,8 @@ async function renderRecurringView() {
 }
 
 function populateRecurringCategorySelect(selectedId) {
-  const sel = document.getElementById('recEditCategory');
-  if (sel) _populateCategorySelect(sel, selectedId);
+  resetCatChooser('recurring', selectedId);
+  remeasureCatChooser('recurring');
 }
 
 // Validity is a single choice (unlimited / date / count). Toggling
@@ -276,6 +276,13 @@ function _updateRecurringStatusHint(rule) {
   }
 }
 
+// The rule's type is what its two choosers rank against, so switching it
+// reshuffles both chip rows — the same behaviour the booking form's
+// expense/income toggle has.
+function onRecurringTypeChange() {
+  rerankChoosersForType('recurring');
+}
+
 function openRecurringModal(id) {
   if (!appState.ledger.categories.length) {
     toast(tr('recurring.needCategory'), 'error');
@@ -350,7 +357,7 @@ function _recurringPayloadFromForm() {
   const name = document.getElementById('recEditName').value.trim();
   const type = document.getElementById('recEditType').value;
   const amount = parseAmount(document.getElementById('recEditAmount').value);
-  const categoryId = parseInt(document.getElementById('recEditCategory').value, 10);
+  const categoryId = catChooserValue('recurring');
   const description = document.getElementById('recEditDescription').value.trim();
   const frequency = document.getElementById('recEditFrequency').value;
   const interval = Math.max(1, parseInt(document.getElementById('recEditInterval').value, 10) || 1);

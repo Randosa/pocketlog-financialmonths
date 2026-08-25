@@ -133,6 +133,33 @@ function _recurringNextOccurrence(frequency, interval, after, weekday, dom) {
   return { y: ny, m: nm, d: _recurringClampDay(ny, nm, day) };
 }
 
+// --- Suggestion ranking -----------------------------------------------------
+
+// Ordering shared by the tag and the category chooser. Both show only their
+// top few chips and reach the rest through search, so this comparator decides
+// whether the everyday case is a single tap.
+//
+// The count for the form's *current type* leads: booking an expense should not
+// be offered the category (or tag) that only ever rides along with income. The
+// overall count breaks ties, so two entries unused with this type still sort by
+// how familiar they are rather than arbitrarily. Whatever is left the caller
+// settles by name.
+//
+// `counts` is {all, in, out} as the API reports it; `type` is 'in' | 'out', or
+// null to rank by the total alone (the bulk action over a mixed selection).
+// Returns a comparator result — negative when `a` should come first.
+function _compareUsage(a, b, type) {
+  const pick = (c) => {
+    const all = Number(c && c.all) || 0;
+    if (type === 'in') return [Number(c && c.in) || 0, all];
+    if (type === 'out') return [Number(c && c.out) || 0, all];
+    return [all, all];
+  };
+  const [aTyped, aAll] = pick(a);
+  const [bTyped, bAll] = pick(b);
+  return bTyped - aTyped || bAll - aAll;
+}
+
 // --- Search / drill-down filtering -----------------------------------------
 
 // Filter a transaction pool by an active drill-down (category or tag) or a
@@ -339,6 +366,7 @@ if (typeof module !== 'undefined' && module.exports) {
     _escText,
     _parseAmountWith,
     _formatAmountWith,
+    _compareUsage,
     _filterTransactions,
     _passwordErrorKey,
     _importReport,

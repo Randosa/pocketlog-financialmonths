@@ -26,7 +26,7 @@ frontend/
   ledger.js          ← transaction list, swipe-to-delete, bulk actions
   reports.js         ← Chart.js wiring + all report renderers
   booking.js         ← create/edit transaction modal
-  categories.js      ← category management, tag picker, icon picker
+  categories.js      ← category management, category + tag chooser, icon picker
   goals.js           ← savings goals + debt trackers
   budgets.js         ← per-category spending caps
   recurring.js       ← recurring rules editor + next-booking preview
@@ -87,12 +87,12 @@ DELETE /api/auth/sessions            ← revoke all others; /{id} revokes one (o
 GET    /api/transactions?year=&month=&from=&to=
 POST|PUT|DELETE /api/transactions/{id}
 POST   /api/transactions/bulk        ← set_category | add_tags | remove_tags | delete
-GET|POST|PUT|DELETE /api/categories/{id}
+GET|POST|PUT|DELETE /api/categories/{id}   ← GET carries 90-day usage counts (count/count_in/count_out)
 GET|POST /api/goals
 PUT|DELETE /api/goals/{id}
 GET|POST /api/budgets
 PUT|DELETE /api/budgets/{id}
-GET|POST /api/tags
+GET|POST /api/tags                   ← GET carries the same usage counts
 PUT|DELETE /api/tags/{name}
 GET|PUT  /api/settings
 POST   /api/import/csv               ← ImportUser (session OR Bearer w/ import scope)

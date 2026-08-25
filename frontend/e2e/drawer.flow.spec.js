@@ -114,11 +114,19 @@ test('drawer tag list: filter appears with the list, and rows work by keyboard',
     await loadTags();
   }, TAGS);
   await openTagPanel(page);
-  await expect(page.locator('#dpTagSearchWrap')).toBeHidden();
-  expect(await page.evaluate(() => appState.drawer.filter.tags)).toBe('');
-  // The list must not butt against the button now that the hidden field
-  // contributes no margin of its own.
-  expect(await gapBelowCreateButton(page), 'gap with the field hidden').toBeGreaterThan(0);
+  // The account is shared with the other specs, so "our tags are gone" does
+  // not guarantee the list dropped under the threshold. Assert the rule the
+  // field actually follows — visible exactly while the list is long enough —
+  // rather than a count this spec cannot own.
+  const remaining = await rowCount(page);
+  const overThreshold = remaining > 10;
+  await expect(page.locator('#dpTagSearchWrap'))[overThreshold ? 'toBeVisible' : 'toBeHidden']();
+  if (!overThreshold) {
+    expect(await page.evaluate(() => appState.drawer.filter.tags)).toBe('');
+  }
+  // The list must not butt against the button — with the field hidden it
+  // contributes no margin of its own, which is the case that regressed.
+  expect(await gapBelowCreateButton(page), 'gap below the create button').toBeGreaterThan(0);
 
   expect(pageErrors, 'no uncaught page errors').toEqual([]);
 });

@@ -12,6 +12,7 @@ const {
   _escText,
   _parseAmountWith,
   _formatAmountWith,
+  _compareUsage,
   _filterTransactions,
   _passwordErrorKey,
   _importReport,
@@ -489,9 +490,9 @@ describe('_failedEntrySummary', () => {
     expect(_failedEntrySummary({ method: 'DELETE', path: '/goals/2', body: null }).entity).toBe(
       'goal',
     );
-    expect(_failedEntrySummary({ method: 'POST', path: '/recurring', body: { name: 'Miete' } })).toMatchObject(
-      { entity: 'recurring', label: 'Miete' },
-    );
+    expect(
+      _failedEntrySummary({ method: 'POST', path: '/recurring', body: { name: 'Miete' } }),
+    ).toMatchObject({ entity: 'recurring', label: 'Miete' });
     expect(_failedEntrySummary({ method: 'POST', path: '/budgets', body: {} }).entity).toBe(
       'budget',
     );
@@ -580,5 +581,59 @@ describe('_normaliseNewTag', () => {
     for (const raw of ['', '   ', '\u0000\u001f', null, undefined]) {
       expect(_normaliseNewTag(raw)).toBe('');
     }
+  });
+});
+
+describe('_compareUsage', () => {
+  // {all, in, out} as the API reports it.
+  const use = (all, i, o) => ({ all, in: i, out: o });
+  // Sort helper: the choosers always break the remaining tie by name, so the
+  // tests do too — that is the real call shape.
+  const rank = (entries, type) =>
+    [...entries]
+      .sort((a, b) => _compareUsage(a.c, b.c, type) || a.name.localeCompare(b.name))
+      .map((e) => e.name);
+
+  const POOL = [
+    { name: 'Gehalt', c: use(4, 4, 0) }, // income only
+    { name: 'Lebensmittel', c: use(20, 0, 20) }, // expenses only
+    { name: 'Mobilität', c: use(6, 1, 5) }, // mostly expenses
+    { name: 'Unbenutzt', c: use(0, 0, 0) },
+  ];
+
+  it('ranks by the count for the requested type', () => {
+    expect(rank(POOL, 'out')).toEqual(['Lebensmittel', 'Mobilität', 'Gehalt', 'Unbenutzt']);
+    expect(rank(POOL, 'in')).toEqual(['Gehalt', 'Mobilität', 'Lebensmittel', 'Unbenutzt']);
+  });
+
+  it('keeps the income category out of the way when booking an expense', () => {
+    // The whole point of the split: 4 income uses must not outrank 5 expense
+    // uses on an expense form, even though 4 < 6 overall.
+    expect(rank(POOL, 'out').indexOf('Gehalt')).toBeGreaterThan(
+      rank(POOL, 'out').indexOf('Mobilität'),
+    );
+  });
+
+  it('breaks ties on the type count by overall use', () => {
+    const a = { name: 'A', c: use(9, 0, 0) };
+    const b = { name: 'B', c: use(1, 0, 0) };
+    // Neither has been used with `in`, so familiarity decides rather than
+    // the alphabet.
+    expect(rank([b, a], 'in')).toEqual(['A', 'B']);
+  });
+
+  it('ranks by the total when no type is given', () => {
+    // The bulk action over a mixed selection has no single type to rank by.
+    expect(rank(POOL, null)).toEqual(['Lebensmittel', 'Mobilität', 'Gehalt', 'Unbenutzt']);
+  });
+
+  it('leaves fully-tied entries to the caller', () => {
+    expect(_compareUsage(use(3, 1, 2), use(3, 1, 2), 'out')).toBe(0);
+  });
+
+  it('treats missing or malformed counts as zero', () => {
+    expect(_compareUsage(undefined, use(1, 0, 1), 'out')).toBeGreaterThan(0);
+    expect(_compareUsage({}, {}, 'in')).toBe(0);
+    expect(_compareUsage({ all: 'x', out: null }, use(0, 0, 0), 'out')).toBe(0);
   });
 });

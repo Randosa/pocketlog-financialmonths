@@ -1220,12 +1220,33 @@
             <p class="field-error" id="errDate" role="alert" hidden></p>
           </div>
           <div class="form-group">
-            <label data-i18n="tx.category">Kategorie</label>
-            <select
-              id="inputCat"
-              aria-describedby="errCat"
-              data-action-change="clearBookingFieldError" data-args='["inputCat"]'
-            ></select>
+            <label id="catSearchLabel" for="catSearch" data-i18n="tx.category">Kategorie</label>
+            <div class="search-wrap cat-chooser-search">
+              <span class="search-icon" aria-hidden="true">
+                <svg class="ui-icon"><use href="#icon-search" /></svg>
+              </span>
+              <input
+                class="search-input"
+                id="catSearch"
+                type="search"
+                maxlength="100"
+                placeholder="Kategorie suchen oder anlegen"
+                data-i18n-attr="placeholder:categories.searchOrCreate"
+                enterkeyhint="done"
+                inputmode="search"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                data-action-input="filterCatChooser"
+                data-action-keydown="handleCatChooserKey"
+                data-args='["transaction", "@value", "@event"]'
+              />
+            </div>
+            <!-- The row is the selection: the chosen category carries the
+                 accent, so nothing is listed twice. -->
+            <div class="cat-suggestions" id="catSuggestions" role="group" aria-labelledby="catSearchLabel"></div>
+            <p class="cat-chooser-hint" id="catSuggestionsHint" role="status" hidden></p>
             <p class="field-error" id="errCat" role="alert" hidden></p>
           </div>
           <div class="form-group">
@@ -1369,8 +1390,33 @@
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label for="bulkCatSelect" data-i18n="tx.category">Kategorie</label>
-            <select id="bulkCatSelect"></select>
+            <label id="bulkCatSearchLabel" for="bulkCatSearch" data-i18n="tx.category">Kategorie</label>
+            <div class="search-wrap cat-chooser-search">
+              <span class="search-icon" aria-hidden="true">
+                <svg class="ui-icon"><use href="#icon-search" /></svg>
+              </span>
+              <input
+                class="search-input"
+                id="bulkCatSearch"
+                type="search"
+                maxlength="100"
+                placeholder="Kategorie suchen oder anlegen"
+                data-i18n-attr="placeholder:categories.searchOrCreate"
+                enterkeyhint="done"
+                inputmode="search"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                data-action-input="filterCatChooser"
+                data-action-keydown="handleCatChooserKey"
+                data-args='["bulk", "@value", "@event"]'
+              />
+            </div>
+            <!-- The row is the selection: the chosen category carries the
+                 accent, so nothing is listed twice. -->
+            <div class="cat-suggestions" id="bulkCatSuggestions" role="group" aria-labelledby="bulkCatSearchLabel"></div>
+            <p class="cat-chooser-hint" id="bulkCatSuggestionsHint" role="status" hidden></p>
           </div>
         </div>
         <div class="modal-footer">
@@ -1448,8 +1494,33 @@
             </select>
           </div>
           <div class="form-group">
-            <label data-i18n="goals.category">Kategorie</label>
-            <select id="goalEditCategory" data-action-change="_syncGoalNameToCategory"></select>
+            <label id="goalCatSearchLabel" for="goalCatSearch" data-i18n="goals.category">Kategorie</label>
+            <div class="search-wrap cat-chooser-search">
+              <span class="search-icon" aria-hidden="true">
+                <svg class="ui-icon"><use href="#icon-search" /></svg>
+              </span>
+              <input
+                class="search-input"
+                id="goalCatSearch"
+                type="search"
+                maxlength="100"
+                placeholder="Kategorie suchen oder anlegen"
+                data-i18n-attr="placeholder:categories.searchOrCreate"
+                enterkeyhint="done"
+                inputmode="search"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                data-action-input="filterCatChooser"
+                data-action-keydown="handleCatChooserKey"
+                data-args='["goal", "@value", "@event"]'
+              />
+            </div>
+            <!-- The row is the selection: the chosen category carries the
+                 accent, so nothing is listed twice. -->
+            <div class="cat-suggestions" id="goalCatSuggestions" role="group" aria-labelledby="goalCatSearchLabel"></div>
+            <p class="cat-chooser-hint" id="goalCatSuggestionsHint" role="status" hidden></p>
           </div>
           <div class="form-group">
             <label id="goalInitialLabel" data-i18n="goals.initialAmount">Startbetrag</label>
@@ -1493,8 +1564,33 @@
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label data-i18n="budget.category">Kategorie</label>
-            <select id="budgetEditCategory"></select>
+            <label id="budgetCatSearchLabel" for="budgetCatSearch" data-i18n="budget.category">Kategorie</label>
+            <div class="search-wrap cat-chooser-search">
+              <span class="search-icon" aria-hidden="true">
+                <svg class="ui-icon"><use href="#icon-search" /></svg>
+              </span>
+              <input
+                class="search-input"
+                id="budgetCatSearch"
+                type="search"
+                maxlength="100"
+                placeholder="Kategorie suchen oder anlegen"
+                data-i18n-attr="placeholder:categories.searchOrCreate"
+                enterkeyhint="done"
+                inputmode="search"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                data-action-input="filterCatChooser"
+                data-action-keydown="handleCatChooserKey"
+                data-args='["budget", "@value", "@event"]'
+              />
+            </div>
+            <!-- The row is the selection: the chosen category carries the
+                 accent, so nothing is listed twice. -->
+            <div class="cat-suggestions" id="budgetCatSuggestions" role="group" aria-labelledby="budgetCatSearchLabel"></div>
+            <p class="cat-chooser-hint" id="budgetCatSuggestionsHint" role="status" hidden></p>
           </div>
           <div class="form-group">
             <label data-i18n="budget.amount">Limit</label>
@@ -1543,7 +1639,7 @@
           </div>
           <div class="form-group">
             <label data-i18n="recurring.type">Typ</label>
-            <select id="recEditType">
+            <select id="recEditType" data-action-change="onRecurringTypeChange">
               <option value="out" data-i18n="recurring.typeExpense">Ausgabe</option>
               <option value="in" data-i18n="recurring.typeIncome">Einnahme</option>
             </select>
@@ -1553,8 +1649,33 @@
             <input type="text" class="amount-input" id="recEditAmount" placeholder="0,00" inputmode="decimal" pattern="[0-9]*[.,]?[0-9]{0,2}" autocomplete="off" />
           </div>
           <div class="form-group">
-            <label data-i18n="recurring.category">Kategorie</label>
-            <select id="recEditCategory"></select>
+            <label id="recCatSearchLabel" for="recCatSearch" data-i18n="recurring.category">Kategorie</label>
+            <div class="search-wrap cat-chooser-search">
+              <span class="search-icon" aria-hidden="true">
+                <svg class="ui-icon"><use href="#icon-search" /></svg>
+              </span>
+              <input
+                class="search-input"
+                id="recCatSearch"
+                type="search"
+                maxlength="100"
+                placeholder="Kategorie suchen oder anlegen"
+                data-i18n-attr="placeholder:categories.searchOrCreate"
+                enterkeyhint="done"
+                inputmode="search"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                data-action-input="filterCatChooser"
+                data-action-keydown="handleCatChooserKey"
+                data-args='["recurring", "@value", "@event"]'
+              />
+            </div>
+            <!-- The row is the selection: the chosen category carries the
+                 accent, so nothing is listed twice. -->
+            <div class="cat-suggestions" id="recCatSuggestions" role="group" aria-labelledby="recCatSearchLabel"></div>
+            <p class="cat-chooser-hint" id="recCatSuggestionsHint" role="status" hidden></p>
           </div>
           <div class="form-group">
             <label data-i18n="recurring.description">Beschreibung</label>
