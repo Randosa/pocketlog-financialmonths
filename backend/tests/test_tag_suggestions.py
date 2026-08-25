@@ -5,6 +5,9 @@ covers the recent window (``crud.TAG_COUNT_WINDOW_DAYS``). The frontend
 ranks its suggestion chips by that count, so the window decides which tags
 a user is offered when booking. These tests pin the window and the
 "names always, counts only when recent" split it rests on.
+
+``count_in``/``count_out`` split the same window by transaction type so the
+chooser can rank against the form's current type; ``count`` stays the total.
 """
 
 from __future__ import annotations
@@ -14,7 +17,7 @@ from datetime import date, timedelta
 from app import crud
 
 
-def _post_tx(client, cat_id, tags, when, desc="t"):
+def _post_tx(client, cat_id, tags, when, desc="t", tx_type="out"):
     return client.post(
         "/api/transactions",
         json={
@@ -22,7 +25,7 @@ def _post_tx(client, cat_id, tags, when, desc="t"):
             "desc": desc,
             "category_id": cat_id,
             "date": when.isoformat(),
-            "type": "out",
+            "type": tx_type,
             "tags": tags,
         },
     )
@@ -78,3 +81,38 @@ def test_standalone_tag_has_count_zero(client):
     assert client.post("/api/tags", json={"name": "unused"}).status_code == 201
 
     assert _counts(client) == {"unused": 0}
+
+
+def test_counts_split_by_transaction_type(client):
+    """The split the type-aware ranking rests on: a tag used on both an
+    expense and an income reports each side separately, and ``count``
+    stays their sum."""
+    cat_id = client.get("/api/categories").json()[0]["id"]
+    recent = date.today() - timedelta(days=5)
+    for i in range(3):
+        _post_tx(client, cat_id, ["both"], recent, desc=f"o{i}", tx_type="out")
+    _post_tx(client, cat_id, ["both"], recent, desc="i0", tx_type="in")
+
+    tag = next(t for t in client.get("/api/tags").json() if t["name"] == "both")
+    assert tag["count_out"] == 3
+    assert tag["count_in"] == 1
+    assert tag["count"] == 4
+
+
+def test_type_counts_respect_the_window(client):
+    """A stale booking contributes to neither side, exactly like ``count``."""
+    cat_id = client.get("/api/categories").json()[0]["id"]
+    stale = date.today() - timedelta(days=crud.TAG_COUNT_WINDOW_DAYS + 1)
+    _post_tx(client, cat_id, ["old"], stale, tx_type="in")
+
+    tag = next(t for t in client.get("/api/tags").json() if t["name"] == "old")
+    assert (tag["count"], tag["count_in"], tag["count_out"]) == (0, 0, 0)
+
+
+def test_standalone_tag_has_zero_on_both_sides(client):
+    """A tag with no transactions reports zeros rather than omitting the
+    fields — the frontend reads them unconditionally."""
+    assert client.post("/api/tags", json={"name": "unused2"}).status_code == 201
+
+    tag = next(t for t in client.get("/api/tags").json() if t["name"] == "unused2")
+    assert (tag["count"], tag["count_in"], tag["count_out"]) == (0, 0, 0)

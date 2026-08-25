@@ -23,7 +23,11 @@ async function loadTags() {
     tagCounts.clear();
     for (const t of list) {
       if (typeof t === 'string') continue;
-      tagCounts.set(t.name.toLowerCase(), Number(t.count) || 0);
+      tagCounts.set(t.name.toLowerCase(), {
+        all: Number(t.count) || 0,
+        in: Number(t.count_in) || 0,
+        out: Number(t.count_out) || 0,
+      });
     }
   } catch (e) {
     appState.ledger.availableTags = [];
@@ -50,6 +54,9 @@ const TAG_CHOOSERS = {
     write: (v) => {
       appState.form.tags = v;
     },
+    // The expense/income toggle above the field. Ranking follows it, so
+    // switching the toggle reshuffles the chips (see setType).
+    type: () => appState.form.type,
   },
   recurring: {
     input: 'recTagSearch',
@@ -59,6 +66,9 @@ const TAG_CHOOSERS = {
     write: (v) => {
       appState.recurring.tags = v;
     },
+    // The rule's own type <select>, read live rather than from state: the
+    // editor writes appState.recurring.* only on save.
+    type: () => document.getElementById('recEditType')?.value || 'out',
   },
 };
 
@@ -92,14 +102,15 @@ function _rebuildTagChooser(ctx) {
   // shows its tags even when none of them are among the frequent ones.
   const chosen = chooser.read();
   const selected = new Set(chosen.map((x) => x.toLowerCase()));
+  const type = chooser.type ? chooser.type() : null;
   const rest = all
     .filter((t) => !selected.has(t.toLowerCase()))
-    .sort((a, b) => {
-      // Most-used first (90-day window, see crud/tags.py), then by name.
-      const ca = tagCounts.get(a.toLowerCase()) || 0;
-      const cb = tagCounts.get(b.toLowerCase()) || 0;
-      return cb !== ca ? cb - ca : _byTagName(a, b);
-    })
+    .sort(
+      (a, b) =>
+        // Most-used for the form's current type first (90-day window, see
+        // crud/tags.py), overall use as the tie-break, then by name.
+        _compareUsage(_tagUse(a), _tagUse(b), type) || _byTagName(a, b),
+    )
     .slice(0, TAG_CHOOSER_TOP)
     .sort(_byTagName);
   view.shown = [...chosen.slice().sort(_byTagName), ...rest];
@@ -244,6 +255,353 @@ function resetTagChooser(ctx) {
 }
 
 // ── TAG PICKER MODAL ──────────────────────────────────────────────────────────
+// ── CATEGORY CHOOSER ──────────────────────────────────────────────────────────
+// Every form that used to hold a bare <select> of category names now uses this:
+// a search field over all categories, and below it a row of chips carrying the
+// category's own icon and colour — the language the rest of the app speaks.
+//
+// Three things make it different from the tag chooser it mirrors:
+//
+//   1. Single-select and mandatory. A tap switches, it never clears, and the
+//      chooser's `selectedId` *is* the form's value — no <select> is read.
+//   2. The row is capped by measured rows, not by a count: chip widths follow
+//      the category names, so a fixed number packs into anything from one row
+//      to three. Two rows is the knee of the curve — the third buys few extra
+//      hits and pushes the notes field below the fold.
+//   3. Creating opens the category modal with the name filled in rather than
+//      creating silently. A tag with a default look is harmless; a category
+//      shows up in every report, so its icon and colour are worth a decision.
+//
+// Ranking is most-used-first for the form's current type (see _compareUsage in
+// utils.js), which is why switching expense/income reshuffles the chips.
+const CAT_CHOOSER_ROWS = 2; // chip rows shown with an empty field
+const CAT_CHOOSER_HITS = 12; // cap while a query narrows things down
+// Used until the row has been laid out and can be measured — deliberately
+// small so a modal never flashes every category before the cap lands.
+const CAT_CHOOSER_BLIND_CAP = 5;
+
+const CAT_CHOOSERS = {
+  transaction: {
+    input: 'catSearch',
+    row: 'catSuggestions',
+    hint: 'catSuggestionsHint',
+    type: () => appState.form.type,
+  },
+  recurring: {
+    input: 'recCatSearch',
+    row: 'recCatSuggestions',
+    hint: 'recCatSuggestionsHint',
+    // Read live from the rule's type <select>: the editor writes its state
+    // only on save.
+    type: () => document.getElementById('recEditType')?.value || 'out',
+  },
+  goal: {
+    input: 'goalCatSearch',
+    row: 'goalCatSuggestions',
+    hint: 'goalCatSuggestionsHint',
+    // A savings goal fills up from income, a debt tracker is paid down by
+    // expenses — so the goal's direction picks the side to rank by.
+    type: () => (document.getElementById('goalEditDirection')?.value === 'pay_down' ? 'out' : 'in'),
+    taken: () => _goalTakenCategoryIds(appState.goals.editingId),
+    // The new-goal form names itself after the chosen category for as long as
+    // the name is still its own suggestion.
+    onSelect: () => _syncGoalNameToCategory(),
+  },
+  budget: {
+    input: 'budgetCatSearch',
+    row: 'budgetCatSuggestions',
+    hint: 'budgetCatSuggestionsHint',
+    // A budget caps spending, always.
+    type: () => 'out',
+    taken: () => _budgetTakenCategoryIds(appState.budgets.editingId),
+  },
+  bulk: {
+    input: 'bulkCatSearch',
+    row: 'bulkCatSuggestions',
+    hint: 'bulkCatSuggestionsHint',
+    // Rank by the marked rows' own type when they agree; a mixed selection
+    // has no single answer, so it falls back to overall use.
+    type: () => _selectionType(),
+  },
+};
+
+// Usage record for a category in the shape _compareUsage expects. The API
+// reports the three counts; a category created offline has none yet.
+function _catUse(cat) {
+  return {
+    all: Number(cat && cat.count) || 0,
+    in: Number(cat && cat.count_in) || 0,
+    out: Number(cat && cat.count_out) || 0,
+  };
+}
+
+// The type shared by every marked transaction, or null when they disagree.
+function _selectionType() {
+  const ids = new Set(appState.selection.ids);
+  const pool = appState.ledger.all || appState.ledger.transactions;
+  let seen = null;
+  for (const t of pool) {
+    if (!ids.has(t.id)) continue;
+    if (seen == null) seen = t.type;
+    else if (seen !== t.type) return null;
+  }
+  return seen;
+}
+
+const _byCatName = (a, b) => a.name.localeCompare(b.name, _locale(), { sensitivity: 'base' });
+
+// Categories this context may offer: goals and budgets are 1:1 with a
+// category, so the ones already spoken for are dropped — except the one this
+// record itself holds, which stays selectable.
+function _catChooserPool(ctx) {
+  const chooser = CAT_CHOOSERS[ctx];
+  const taken = chooser.taken ? chooser.taken() : null;
+  const selectedId = appState.catChooser[ctx].selectedId;
+  return appState.ledger.categories.filter(
+    (c) => !taken || c.id === selectedId || !taken.has(c.id),
+  );
+}
+
+// Decide which chips the row shows and freeze that order into the view state.
+// Called when a form opens, when the query changes and when the type changes —
+// never on a tap, so a chip cannot move out from under a finger mid-press.
+function _rebuildCatChooser(ctx) {
+  const view = appState.catChooser[ctx];
+  const query = view.query.trim().toLowerCase();
+  const pool = _catChooserPool(ctx);
+
+  if (query) {
+    // Search runs over every category, not just the visible rows — that is
+    // the whole point of the field replacing the <select>.
+    const hits = pool.filter((c) => c.name.toLowerCase().includes(query)).sort(_byCatName);
+    view.shown = hits.slice(0, CAT_CHOOSER_HITS);
+    view.overflow = hits.length - view.shown.length;
+    return;
+  }
+
+  // Overview: what is already selected comes first, so editing an old record
+  // shows its category even when it is not one of the frequent ones.
+  const type = CAT_CHOOSERS[ctx].type ? CAT_CHOOSERS[ctx].type() : null;
+  const selected = pool.find((c) => c.id === view.selectedId);
+  const rest = pool
+    .filter((c) => c.id !== view.selectedId)
+    .sort((a, b) => _compareUsage(_catUse(a), _catUse(b), type) || _byCatName(a, b));
+  view.shown = selected ? [selected, ...rest] : rest;
+  view.overflow = 0; // decided by the row cap, after layout
+}
+
+function _catChipMarkup(ctx, c) {
+  const on = c.id === appState.catChooser[ctx].selectedId;
+  return `<button type="button" class="cat-suggestion${on ? ' is-chosen' : ''}" data-cat-choice="${c.id}" aria-pressed="${on}" style="--cat-color:${_escAttr(c.color || '#9e9b96')}" aria-label="${_escAttr(tr('categories.chooseAria', { name: c.name }))}"><span class="cat-suggestion-glyph" aria-hidden="true">${catIconSvg(c.icon)}</span>${_escText(c.name)}</button>`;
+}
+
+function renderCatChooser(ctx) {
+  const chooser = CAT_CHOOSERS[ctx];
+  const row = document.getElementById(chooser.row);
+  if (!row) return;
+  const view = appState.catChooser[ctx];
+  const query = view.query.trim();
+  const exact =
+    query && appState.ledger.categories.some((c) => c.name.toLowerCase() === query.toLowerCase());
+
+  // Offer to make the typed text a category, so the name is typed once rather
+  // than again in the modal. Last, and only when it is not an exact match —
+  // creating "Auto" has to stay possible even though "Autobahn" matches.
+  const createChip =
+    query && !exact
+      ? `<button type="button" class="cat-suggestion cat-create" data-cat-create="${_escAttr(query)}">${_escText(tr('categories.createChip', { name: query }))}</button>`
+      : '';
+
+  if (query) {
+    view.capped = view.shown.length;
+    row.innerHTML = view.shown.map((c) => _catChipMarkup(ctx, c)).join('') + createChip;
+  } else {
+    row.innerHTML = view.shown.map((c) => _catChipMarkup(ctx, c)).join('');
+    _capCatChooserRows(ctx);
+  }
+
+  row.querySelectorAll('[data-cat-choice]').forEach((el) => {
+    el.addEventListener('click', () => selectCatChooser(ctx, Number(el.dataset.catChoice)));
+  });
+  row.querySelectorAll('[data-cat-create]').forEach((el) => {
+    el.addEventListener('click', () => createCategoryFromChooser(ctx, el.dataset.catCreate));
+  });
+
+  _renderCatChooserHint(ctx);
+}
+
+// Trim the row to CAT_CHOOSER_ROWS by measuring where each chip landed.
+// While the row is not laid out (a form fills its chooser before its modal is
+// shown) fall back to a small blind cap and let the caller re-run this once
+// the modal is up — the frozen order makes that idempotent.
+function _capCatChooserRows(ctx) {
+  const row = document.getElementById(CAT_CHOOSERS[ctx].row);
+  const view = appState.catChooser[ctx];
+  if (!row) return;
+  const chips = [...row.children];
+  if (!chips.length) {
+    view.capped = 0;
+    return;
+  }
+  let keep;
+  if (row.offsetParent === null) {
+    keep = Math.min(CAT_CHOOSER_BLIND_CAP, chips.length);
+  } else {
+    const tops = [...new Set(chips.map((c) => c.offsetTop))].sort((a, b) => a - b);
+    const allowed = new Set(tops.slice(0, CAT_CHOOSER_ROWS));
+    keep = chips.filter((c) => allowed.has(c.offsetTop)).length;
+  }
+  view.capped = keep;
+  if (keep < chips.length) {
+    row.innerHTML = view.shown
+      .slice(0, keep)
+      .map((c) => _catChipMarkup(ctx, c))
+      .join('');
+    row.querySelectorAll('[data-cat-choice]').forEach((el) => {
+      el.addEventListener('click', () => selectCatChooser(ctx, Number(el.dataset.catChoice)));
+    });
+  }
+}
+
+function _renderCatChooserHint(ctx) {
+  const hint = document.getElementById(CAT_CHOOSERS[ctx].hint);
+  if (!hint) return;
+  const view = appState.catChooser[ctx];
+  const query = view.query.trim();
+  const hidden = query ? view.overflow : Math.max(0, _catChooserPool(ctx).length - view.capped);
+  const message = query
+    ? view.shown.length === 0
+      ? tr('categories.searchNone')
+      : view.overflow > 0
+        ? tr('categories.moreResults', { n: view.overflow })
+        : ''
+    : hidden > 0
+      ? tr('categories.moreAvailable', { n: hidden })
+      : '';
+  hint.textContent = message;
+  hint.hidden = !message;
+}
+
+// Re-measure a chooser's row cap once its modal is actually on screen. The
+// order is frozen in state, so this only ever adds or removes chips at the
+// tail — nothing the user was aiming at moves.
+function remeasureCatChooser(ctx) {
+  if (!appState.catChooser[ctx] || appState.catChooser[ctx].query.trim()) return;
+  requestAnimationFrame(() => {
+    const view = appState.catChooser[ctx];
+    if (view.query.trim()) return;
+    const row = document.getElementById(CAT_CHOOSERS[ctx].row);
+    if (!row) return;
+    row.innerHTML = view.shown.map((c) => _catChipMarkup(ctx, c)).join('');
+    _capCatChooserRows(ctx);
+    row.querySelectorAll('[data-cat-choice]').forEach((el) => {
+      el.addEventListener('click', () => selectCatChooser(ctx, Number(el.dataset.catChoice)));
+    });
+    _renderCatChooserHint(ctx);
+  });
+}
+
+// A tap switches the selection; it never clears it. Only the colours change —
+// the frozen order keeps every other chip exactly where the user saw it.
+function selectCatChooser(ctx, id) {
+  const view = appState.catChooser[ctx];
+  view.selectedId = Number(id);
+  view.auto = false; // a deliberate choice; the type no longer overrides it
+  const row = document.getElementById(CAT_CHOOSERS[ctx].row);
+  if (!row) return;
+  row.querySelectorAll('[data-cat-choice]').forEach((el) => {
+    const on = Number(el.dataset.catChoice) === view.selectedId;
+    el.classList.toggle('is-chosen', on);
+    el.setAttribute('aria-pressed', String(on));
+  });
+  // Picking from the search results is the end of that search: clear the
+  // field so the row goes back to showing the ranked overview with the new
+  // choice at its head.
+  if (view.query.trim()) _clearCatChooserQuery(ctx);
+  if (CAT_CHOOSERS[ctx].onSelect) CAT_CHOOSERS[ctx].onSelect();
+}
+
+function filterCatChooser(ctx, value) {
+  appState.catChooser[ctx].query = value || '';
+  _rebuildCatChooser(ctx);
+  renderCatChooser(ctx);
+}
+
+function _clearCatChooserQuery(ctx) {
+  const input = document.getElementById(CAT_CHOOSERS[ctx].input);
+  if (input) input.value = '';
+  appState.catChooser[ctx].query = '';
+  _rebuildCatChooser(ctx);
+  renderCatChooser(ctx);
+}
+
+// Enter picks the single match, or offers to create when nothing matches —
+// so a keyboard user never has to reach for the chip row.
+function handleCatChooserKey(ctx, value, e) {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const raw = (value || '').trim();
+  if (!raw) return;
+  const view = appState.catChooser[ctx];
+  const exact = view.shown.find((c) => c.name.toLowerCase() === raw.toLowerCase());
+  if (exact) return selectCatChooser(ctx, exact.id);
+  if (view.shown.length === 1) return selectCatChooser(ctx, view.shown[0].id);
+  if (!view.shown.length) createCategoryFromChooser(ctx, raw);
+}
+
+// Unlike a tag, a category gets a full modal: it carries an icon and a colour
+// that show up in every report, and picking those deliberately once is worth
+// more than saving a tap. The name is carried over so it is typed only once.
+function createCategoryFromChooser(ctx, raw) {
+  const name = (raw || '').trim();
+  if (!name) return;
+  openCatModal(null, { prefillName: name, returnTo: ctx });
+}
+
+// Fill a chooser for a form that is opening. `selectedId` null means "no
+// choice yet" — the ranking then puts the most likely category first and
+// preselects it, which beats the alphabetically first one the <select> used
+// to land on.
+function resetCatChooser(ctx, selectedId) {
+  const view = appState.catChooser[ctx];
+  view.query = '';
+  const input = document.getElementById(CAT_CHOOSERS[ctx].input);
+  if (input) input.value = '';
+  view.selectedId = selectedId != null ? Number(selectedId) : null;
+  view.auto = selectedId == null;
+  _rebuildCatChooser(ctx);
+  if (view.selectedId == null && view.shown.length) view.selectedId = view.shown[0].id;
+  renderCatChooser(ctx);
+}
+
+// The value the form saves. Null when the user has no valid choice — the
+// callers surface that as the same field error the <select> used to.
+function catChooserValue(ctx) {
+  const id = appState.catChooser[ctx].selectedId;
+  return Number.isFinite(id) && appState.ledger.categories.some((c) => c.id === id) ? id : null;
+}
+
+// The expense/income toggle changed: both choosers rank against the type, so
+// both have to re-rank. Not a violation of the frozen order — that freeze
+// protects against taps, and switching the type is a different intent.
+function rerankChoosersForType(ctx) {
+  const view = appState.catChooser[ctx];
+  if (view) {
+    // An automatic choice follows the ranking, so re-pick it for the new type:
+    // flipping to income must not leave the expense default selected. A
+    // category the user tapped stays put.
+    if (view.auto) view.selectedId = null;
+    _rebuildCatChooser(ctx);
+    if (view.auto && view.shown.length) view.selectedId = view.shown[0].id;
+    renderCatChooser(ctx);
+    remeasureCatChooser(ctx);
+  }
+  if (appState.tagChooser[ctx]) {
+    _rebuildTagChooser(ctx);
+    renderTagChooser(ctx);
+  }
+}
+
 // Only the ledger's bulk actions still open this. The booking form and the
 // recurring editor pick tags inline through the chooser above, so the picker
 // no longer stages a form's tags — its selection is always the set of tags to
@@ -713,8 +1071,13 @@ async function loadCategoryIconSprite() {
 // seed the icon default from CAT_ICON_FALLBACK (defined above).
 appState.catEdit.icon = CAT_ICON_FALLBACK;
 
-function openCatModal(id) {
+// `opts.prefillName` seeds the name field (the chooser's "add" chip carries
+// the text the user already typed); `opts.returnTo` is the chooser context to
+// hand the finished category back to, so the form the user was filling in
+// continues with it selected.
+function openCatModal(id, opts = {}) {
   rememberModalFocus('cat');
+  appState.catEdit.returnTo = opts.returnTo || null;
   const deleteBtn = document.getElementById('catDeleteBtn');
   const title = document.getElementById('catModalTitle');
   if (id) {
@@ -731,7 +1094,7 @@ function openCatModal(id) {
     appState.catEdit.color =
       CAT_CREATE_COLORS[appState.ledger.categories.length % CAT_CREATE_COLORS.length];
     appState.catEdit.icon = CAT_ICON_FALLBACK;
-    document.getElementById('catEditName').value = '';
+    document.getElementById('catEditName').value = opts.prefillName || '';
     title.textContent = tr('categories.newTitle');
     deleteBtn.style.display = 'none';
   }
@@ -784,7 +1147,20 @@ function pickCatColor(c) {
   renderCatIconPreview();
 }
 
+// Select the just-created category in the chooser that asked for it, so the
+// form the user left continues where it was. By name rather than by id: the
+// offline path only has a provisional id, and the name is what was just
+// entered either way.
+function _handBackNewCategory(ctx, name) {
+  if (!ctx || !appState.catChooser[ctx]) return;
+  const made = appState.ledger.categories.find((c) => c.name === name);
+  if (!made) return;
+  resetCatChooser(ctx, made.id);
+  remeasureCatChooser(ctx);
+}
+
 function closeCatModal() {
+  appState.catEdit.returnTo = null;
   document.getElementById('catModalOverlay').classList.remove('open');
   document.body.style.overflow = '';
   appState.catEdit.id = null;
@@ -859,11 +1235,19 @@ async function saveCategoryEdit() {
     const result = editId
       ? await api('PUT', `/categories/${editId}`, fields)
       : await api('POST', '/categories', fields);
+    // closeCatModal clears the hand-back target, so read it first.
+    const returnTo = appState.catEdit.returnTo;
     closeCatModal();
-    if (_handleQueuedWrite(result, () => _applyCatLocally(editId ? 'PUT' : 'POST', editId, fields)))
+    if (
+      _handleQueuedWrite(result, () => {
+        _applyCatLocally(editId ? 'PUT' : 'POST', editId, fields);
+        _handBackNewCategory(returnTo, name);
+      })
+    )
       return;
     await loadCategories();
     renderCategories();
+    _handBackNewCategory(returnTo, name);
     await loadAndRender();
   } catch (e) {
     if (e.message && e.message.includes('409')) {

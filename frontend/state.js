@@ -54,6 +54,27 @@ const appState = {
     recurring: { query: '', shown: [], overflow: 0 },
   },
 
+  // Category chooser — the same idiom as the tag chooser, but single-select
+  // and mandatory, so `selectedId` *is* the form's value: nothing reads a
+  // <select> any more. `shown` is frozen between query and type changes for
+  // the same reason the tag row is.
+  //
+  // Unlike tags the row is capped by measured rows rather than by count: chip
+  // widths follow the category names, so a fixed number packs into anything
+  // from one row to three. `capped` is how many the last measurement kept.
+  //
+  // `auto` marks a selection the form picked itself (the top-ranked category)
+  // rather than one the user tapped. Switching the type re-picks an automatic
+  // choice — otherwise flipping to income would leave the expense default
+  // selected — but never overrides a deliberate one.
+  catChooser: {
+    transaction: { query: '', shown: [], overflow: 0, selectedId: null, capped: 0, auto: true },
+    recurring: { query: '', shown: [], overflow: 0, selectedId: null, capped: 0, auto: true },
+    goal: { query: '', shown: [], overflow: 0, selectedId: null, capped: 0, auto: true },
+    budget: { query: '', shown: [], overflow: 0, selectedId: null, capped: 0, auto: true },
+    bulk: { query: '', shown: [], overflow: 0, selectedId: null, capped: 0, auto: true },
+  },
+
   // Reports view. `current` is the active report id (restored from
   // localStorage in app.js); `range` is the selected period; `rangeLock`
   // pins the picker granularity for reports that only make sense at one;
@@ -175,6 +196,9 @@ const appState = {
     id: null,
     color: '#9e9b96',
     icon: null,
+    // Set when the category modal was opened from a chooser's "add" chip:
+    // the chooser context to hand the new category back to on save.
+    returnTo: null,
   },
 
   // Goals list + edit modal draft. goals / editingGoalId / editingGoalColor.

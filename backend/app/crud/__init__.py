@@ -37,12 +37,14 @@ from .budgets import (
     update_budget,
 )
 from .categories import (
+    CATEGORY_COUNT_WINDOW_DAYS,
     _owned_category_exists,
     _seed_default_categories,
     create_category,
     delete_category,
     get_or_create_category,
     list_categories,
+    list_categories_with_usage,
     update_category,
 )
 from .defaults import (
@@ -153,7 +155,9 @@ __all__ = [
     "create_category",
     "delete_category",
     "get_or_create_category",
+    "CATEGORY_COUNT_WINDOW_DAYS",
     "list_categories",
+    "list_categories_with_usage",
     "update_category",
     # goals
     "create_goal",

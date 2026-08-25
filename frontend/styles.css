@@ -155,6 +155,7 @@
         --icon-list-sm: 38px; /* .cat-icon (category-breakdown icon) */
         --swipe-action-w: 92px; /* .tx-action reveal width on swipe-to-delete */
         --icon-select: 24px; /* .tx-select-check multi-select indicator circle */
+        --icon-chip: 20px; /* .cat-suggestion-glyph (category chip icon square) */
         --cat-bar-h: 5px; /* .cat-bar progress-bar height */
         --bottom-bar-clearance: 66px; /* space content panels reserve under the floating bottom bar */
 
@@ -2189,6 +2190,7 @@
          than the canvas fill beside it. */
       .tag-picker-search,
       .tag-chooser-search,
+      .cat-chooser-search,
       .drawer-search {
         /* Same box as .form-group input — see the min-height there. */
         height: calc(2 * var(--space-14) + 1.2 * var(--fs-body));
@@ -2200,15 +2202,19 @@
         border-radius: var(--r-md);
       }
       /* Focus keeps the .search-wrap ring; only the resting elevation goes. */
-      :is(.tag-picker-search, .tag-chooser-search, .drawer-search):not(:focus-within) {
+      :is(.tag-picker-search, .tag-chooser-search, .cat-chooser-search, .drawer-search):not(
+          :focus-within
+        ) {
         box-shadow: none;
       }
-      .tag-chooser-search {
+      .tag-chooser-search,
+      .cat-chooser-search {
         margin-bottom: var(--space-10);
       }
       /* Count / limit / no-match line under a chip row — the two form
          choosers and the bulk picker share it. */
-      .tag-chooser-hint {
+      .tag-chooser-hint,
+      .cat-chooser-hint {
         margin: var(--space-8) 0 0;
         font-size: var(--fs-footnote);
         color: var(--text3);
@@ -2217,7 +2223,8 @@
       /* These filter inputs live inside .form-group, whose generic input
          styling would otherwise paint a second pill inside the search bar.
          Strip it so the search-wrap reads as a single field. */
-      .form-group :is(.tag-picker-search, .tag-chooser-search) .search-input {
+      .form-group :is(.tag-picker-search, .tag-chooser-search, .cat-chooser-search)
+        .search-input {
         background: none;
         border: none;
         box-shadow: none;
@@ -2251,7 +2258,8 @@
          from --chip-outline instead, because a chip has no fill to fall back
          on the way a card or field does. */
       .tag-picker-chip,
-      .tag-suggestion {
+      .tag-suggestion,
+      .cat-suggestion {
         background: transparent;
         border: 0.5px solid var(--chip-outline);
         border-radius: var(--r-pill);
@@ -2462,19 +2470,45 @@
         height: 58%;
       }
 
-      .tag-suggestions {
+      .tag-suggestions,
+      .cat-suggestions {
         display: flex;
         flex-wrap: wrap;
         gap: var(--space-8);
         margin-top: var(--space-10);
       }
-      .tag-suggestions:empty {
+      .tag-suggestions:empty,
+      .cat-suggestions:empty {
         display: none;
       }
       /* Resting look shared with .tag-picker-chip further up. */
-      .tag-suggestion:focus-visible {
+      .tag-suggestion:focus-visible,
+      .cat-suggestion:focus-visible {
         outline: none;
         box-shadow: var(--focus-ring);
+      }
+      /* A category chip carries its own icon and colour — the language the
+         ledger rows and the reports already speak. The tinted square is the
+         same object as .t-icon on a booking row, at chip scale. */
+      .cat-suggestion {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-8);
+      }
+      .cat-suggestion-glyph {
+        width: var(--icon-chip);
+        height: var(--icon-chip);
+        border-radius: var(--r-xs);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        background: color-mix(in oklab, var(--cat-color) 18%, transparent);
+        color: var(--cat-color);
+      }
+      .cat-suggestion-glyph .cat-glyph {
+        width: 70%;
+        height: 70%;
       }
       /* Attached to the form / staged in the picker / active in the trend
          report: one state, one look. The accent reads at a glance where a
@@ -2484,6 +2518,7 @@
          keeps its bolder label below. */
       .tag-picker-chip.selected,
       .tag-suggestion.is-added,
+      .cat-suggestion.is-chosen,
       .trend-chip.is-selected {
         background: color-mix(in oklab, var(--accent) 18%, transparent);
         border-color: var(--accent);
@@ -2491,7 +2526,8 @@
       }
       /* Offers to make the typed text a tag. Dashed and in the accent so it
          cannot be mistaken for one of the existing chips beside it. */
-      .tag-create {
+      .tag-create,
+      .cat-create {
         border-style: dashed;
         border-color: var(--accent);
         color: var(--accent);
@@ -2499,12 +2535,14 @@
       }
       /* Only the not-yet-added chip reacts — an added one already carries the
          accent and must not have it overwritten. */
-      .tag-suggestion:not(.is-added):active {
+      .tag-suggestion:not(.is-added):active,
+      .cat-suggestion:not(.is-chosen):active {
         border-color: var(--text3);
         color: var(--text);
       }
       @media (hover: hover) and (pointer: fine) {
-        .tag-suggestion:not(.is-added):hover {
+        .tag-suggestion:not(.is-added):hover,
+        .cat-suggestion:not(.is-chosen):hover {
           border-color: var(--text3);
           color: var(--text);
         }

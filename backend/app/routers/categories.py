@@ -12,7 +12,7 @@ router = APIRouter()
 
 @router.get("/api/categories", response_model=list[schemas.CategoryOut])
 def get_categories(user: ReadUser, db: DB):
-    return crud.list_categories(db, user.id)
+    return crud.list_categories_with_usage(db, user.id)
 
 
 @router.post("/api/categories", response_model=schemas.CategoryOut, status_code=201)

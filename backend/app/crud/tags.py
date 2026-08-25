@@ -10,7 +10,7 @@ rows through them. They are intentionally collision-folded to match
 from datetime import date as date_type
 from datetime import timedelta
 
-from sqlalchemy import case, func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -87,12 +87,27 @@ def list_tags(db: Session, user_id: int) -> list[dict]:
 
     # Single grouped query: LEFT JOIN keeps standalone tags with count 0;
     # the CASE ... date >= cutoff windows the count without filtering
-    # out unused tags. Returned as a list of (name, count) pairs sorted
-    # case-insensitively to match the alphabetical UI.
+    # out unused tags. Returned as (name, count, count_in, count_out) rows
+    # sorted case-insensitively to match the alphabetical UI.
+    #
+    # The per-type split lets the frontend rank suggestions against the form's
+    # current type: booking an expense should not surface the tags that only
+    # ever ride along with income. ``count`` stays the total, so a caller that
+    # ignores the split keeps its old behaviour.
     recent = case((models.Transaction.date >= cutoff, 1), else_=0)
+    recent_in = case(
+        (and_(models.Transaction.date >= cutoff, models.Transaction.type == "in"), 1),
+        else_=0,
+    )
+    recent_out = case(
+        (and_(models.Transaction.date >= cutoff, models.Transaction.type == "out"), 1),
+        else_=0,
+    )
     count_expr = func.coalesce(func.sum(recent), 0)
+    in_expr = func.coalesce(func.sum(recent_in), 0)
+    out_expr = func.coalesce(func.sum(recent_out), 0)
     rows = db.execute(
-        select(models.Tag.name, count_expr)
+        select(models.Tag.name, count_expr, in_expr, out_expr)
         .select_from(models.Tag)
         .join(
             models.transaction_tags,
@@ -108,7 +123,15 @@ def list_tags(db: Session, user_id: int) -> list[dict]:
         .group_by(models.Tag.id, models.Tag.name)
         .order_by(func.lower(models.Tag.name))
     ).all()
-    return [{"name": name, "count": int(count or 0)} for name, count in rows]
+    return [
+        {
+            "name": name,
+            "count": int(count or 0),
+            "count_in": int(c_in or 0),
+            "count_out": int(c_out or 0),
+        }
+        for name, count, c_in, c_out in rows
+    ]
 
 
 def _find_tag_by_name(db: Session, user_id: int, name: str) -> models.Tag | None:

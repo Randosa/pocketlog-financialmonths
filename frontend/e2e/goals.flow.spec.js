@@ -6,7 +6,15 @@
 // itself lives in the backend suite), the category cannot be deleted while the
 // goal references it, and deleting the goal leaves the bookings untouched.
 const { test, expect } = require('@playwright/test');
-const { loginViaApi, bootIntoApp, expectNoRawKeys, gotoPanel, selectLabels } = require('./helpers');
+const {
+  loginViaApi,
+  bootIntoApp,
+  expectNoRawKeys,
+  gotoPanel,
+  catChooserOffers,
+  chooseCategory,
+  chosenCategoryId,
+} = require('./helpers');
 
 const RUN = Date.now();
 const CAT = `FlowGoalCat ${RUN}`;
@@ -31,7 +39,7 @@ test('goal progress, category conflicts and delete protection', async ({ page })
   await page.evaluate(() => window.openGoalModal());
   await expect(page.locator('#goalModalOverlay')).toHaveClass(/open/);
   await page.fill('#goalEditName', GOAL);
-  await page.selectOption('#goalEditCategory', { label: CAT });
+  await chooseCategory(page, 'goal', CAT);
   await page.fill('#goalEditInitial', '0');
   await page.fill('#goalEditTarget', '500');
   await page.evaluate(() => window.saveGoalEdit());
@@ -50,7 +58,7 @@ test('goal progress, category conflicts and delete protection', async ({ page })
   await page.evaluate(() => window.setType('in'));
   await page.fill('#inputAmount', '100');
   await page.fill('#inputDesc', TX_DESC);
-  await page.selectOption('#inputCat', { label: CAT });
+  await chooseCategory(page, 'transaction', CAT);
   await page.click('#submitBtn');
   await expect(page.locator('#modalOverlay')).not.toHaveClass(/open/);
 
@@ -65,14 +73,12 @@ test('goal progress, category conflicts and delete protection', async ({ page })
   //     can only fail on Save. ---
   await page.evaluate(() => window.openGoalModal());
   await expect(page.locator('#goalModalOverlay')).toHaveClass(/open/);
-  expect(await selectLabels(page, 'goalEditCategory')).not.toContain(CAT);
+  expect(await catChooserOffers(page, 'goal', CAT)).toBe(false);
   // The name follows the picker while it is still the form's own suggestion.
   await expect(page.locator('#goalEditName')).toHaveValue(
     await page.evaluate(
       () =>
-        appState.ledger.categories.find(
-          (c) => c.id === Number(document.getElementById('goalEditCategory').value),
-        ).name,
+        appState.ledger.categories.find((c) => c.id === appState.catChooser.goal.selectedId).name,
     ),
   );
   // …and it arrives selected, so it is a starting point rather than something
@@ -94,7 +100,7 @@ test('goal progress, category conflicts and delete protection', async ({ page })
     window.openGoalModal(goal.id);
   }, GOAL);
   await expect(page.locator('#goalModalOverlay')).toHaveClass(/open/);
-  expect(await selectLabels(page, 'goalEditCategory')).toContain(CAT);
+  expect(await catChooserOffers(page, 'goal', CAT)).toBe(true);
   await expect(page.locator('#goalEditName')).toHaveValue(GOAL);
   await page.evaluate(() => window.closeGoalModal());
 

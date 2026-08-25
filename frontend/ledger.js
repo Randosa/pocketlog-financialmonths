@@ -338,7 +338,10 @@ function renderCategoryView() {
 
 function openModalForCategory(catId) {
   openModal(null);
-  document.getElementById('inputCat').value = catId;
+  // openModal already filled the chooser with its ranked default; this row
+  // was tapped *because* of its category, so that choice wins.
+  resetCatChooser('transaction', catId);
+  remeasureCatChooser('transaction');
 }
 
 async function showTransactionsForCategory(catId) {
@@ -691,8 +694,10 @@ async function bulkDelete() {
 function openBulkCategory() {
   if (!appState.selection.ids.length) return;
   rememberModalFocus('bulkCat');
-  _populateCategorySelect(document.getElementById('bulkCatSelect'), null);
+  resetCatChooser('bulk', null);
   document.getElementById('bulkCatOverlay').classList.add('open');
+  // After .open: the row can only be measured once it is on screen.
+  remeasureCatChooser('bulk');
   document.body.style.overflow = 'hidden';
   trapFocusIn(document.querySelector('#bulkCatOverlay .modal'), 'bulkCat');
 }
@@ -705,7 +710,7 @@ function closeBulkCategory() {
 }
 
 function commitBulkCategory() {
-  const catId = parseInt(document.getElementById('bulkCatSelect').value, 10);
+  const catId = catChooserValue('bulk');
   closeBulkCategory();
   if (!catId) return;
   bulkApply({ action: 'set_category', category_id: catId });

@@ -2,33 +2,6 @@
 // Classic script — see index.html for load order.
 
 // ── MODAL ─────────────────────────────────────────────────────────────────────
-// Category <select> filler shared by the booking, goal and recurring editors.
-// Alphabetical locale sort — consistent with renderCategories() and
-// renderCategoryView() so the user sees the same order wherever they look at
-// categories. Falls back to the alphabetically first option when no valid
-// category is requested (e.g. creating), so the preselection matches the top
-// of the list rather than the unsorted seed order.
-//
-// `takenIds` (optional Set) drops categories the caller cannot use: goals and
-// budgets are 1:1 with a category (uq_goals_user_category / the budgets twin),
-// so offering an occupied one only buys the user a 409 after they hit Save.
-// The category being edited stays listed even when it is in the set — it is
-// occupied by this very record.
-function _populateCategorySelect(sel, selectedId, takenIds) {
-  const sorted = [...appState.ledger.categories]
-    .filter((c) => !takenIds || c.id === selectedId || !takenIds.has(c.id))
-    .sort((a, b) => a.name.localeCompare(b.name, _locale(), { sensitivity: 'base' }));
-  const effectiveId = sorted.some((c) => c.id === selectedId)
-    ? selectedId
-    : sorted[0] && sorted[0].id;
-  sel.innerHTML = sorted
-    .map(
-      (c) =>
-        `<option value="${c.id}"${c.id === effectiveId ? ' selected' : ''}>${_escText(c.name)}</option>`,
-    )
-    .join('');
-}
-
 function openModal(tx) {
   rememberModalFocus('booking');
   appState.form.tags = tx?.tags ? tx.tags.slice() : [];
@@ -36,7 +9,9 @@ function openModal(tx) {
     tx?.amount != null ? _formatAmountInput(Number(tx.amount)) : '';
   document.getElementById('inputDesc').value = tx?.desc || '';
   document.getElementById('inputDate').value = tx?.date || new Date().toISOString().split('T')[0];
-  _populateCategorySelect(document.getElementById('inputCat'), tx ? tx.category_id : null);
+  // Before setType: it re-ranks both choosers, and the category chooser has
+  // to know the current selection before it decides what to put first.
+  resetCatChooser('transaction', tx ? tx.category_id : null);
   setType(tx?.type || 'out', document.querySelector('.type-btn.out'));
   // Opening is the only moment the chip row is recomputed from scratch;
   // toggling a chip afterwards only recolours it (see resetTagChooser).
@@ -51,6 +26,7 @@ function openModal(tx) {
   clearBookingFieldErrors();
   document.getElementById('deleteBtn').style.display = tx ? 'block' : 'none';
   document.getElementById('modalOverlay').classList.add('open');
+  remeasureCatChooser('transaction');
   appState.nav.bookingModalOpenedAt = Date.now();
   document.body.style.overflow = 'hidden';
   setTimeout(() => document.getElementById('inputAmount').focus(), 300);
@@ -67,7 +43,7 @@ function _bookingFormSnapshot() {
     amount: document.getElementById('inputAmount').value.trim(),
     desc: document.getElementById('inputDesc').value.trim(),
     date: document.getElementById('inputDate').value,
-    cat: document.getElementById('inputCat').value,
+    cat: appState.catChooser.transaction.selectedId,
     type: appState.form.type,
     tags: [...appState.form.tags].sort(),
   });
@@ -102,7 +78,7 @@ async function closeModal({ force = false } = {}) {
 const _BOOKING_ERROR_SLOTS = {
   inputAmount: 'errAmount',
   inputDate: 'errDate',
-  inputCat: 'errCat',
+  catSearch: 'errCat',
 };
 
 function _setBookingFieldError(fieldId, msg) {
@@ -197,6 +173,11 @@ function setType(type, btn) {
   document.getElementById('submitBtn').className = 'submit-btn' + (type === 'in' ? ' green' : '');
   document.getElementById('submitBtn').textContent =
     type === 'out' ? tr('tx.saveExpense') : tr('tx.saveIncome');
+  // Both choosers rank against the type, so switching it changes what a good
+  // suggestion is. Re-ranking here is not the frozen-order exception it looks
+  // like: the order only freezes against *taps*, so a chip never moves under
+  // the finger. Deliberately switching the type is a different intent.
+  rerankChoosersForType('transaction');
 }
 
 // The amount field is type="text" so iOS shows the decimal keypad. The
@@ -221,7 +202,7 @@ function normalizeAmountInput() {
 async function addTransaction() {
   const amount = parseAmount(document.getElementById('inputAmount').value);
   const desc = document.getElementById('inputDesc').value.trim();
-  const cat = parseInt(document.getElementById('inputCat').value);
+  const cat = catChooserValue('transaction');
   const date = document.getElementById('inputDate').value;
   // Errors go under their field, not into a toast that names neither.
   // category_id is required by the API, so it is checked here too — it used
@@ -230,7 +211,7 @@ async function addTransaction() {
   const invalid = [
     !amount && ['inputAmount', tr('tx.errAmount')],
     !date && ['inputDate', tr('tx.errDate')],
-    !cat && ['inputCat', tr('tx.errCategory')],
+    !cat && ['catSearch', tr('tx.errCategory')],
   ].filter(Boolean);
   if (invalid.length) {
     invalid.forEach(([field, msg]) => _setBookingFieldError(field, msg));
@@ -254,7 +235,7 @@ async function addTransaction() {
   if (method === 'POST') body.client_op_id = _newOpId();
   try {
     const result = await api(method, path, body);
-    mergeIntoAvailableTags(appState.form.tags);
+    mergeIntoAvailableTags(appState.form.tags, appState.form.type);
     await closeModal({ force: true });
     if (result && result.queued) {
       // Offline: the service worker queued the write (HTTP 202) instead of
@@ -280,7 +261,7 @@ async function addTransaction() {
       // reflect it locally, same as the 202 path above. A real HTTP error
       // (e.g. a 500) carries e.status and falls through to the toast instead.
       await window.PocketLogOutbox.enqueue({ method, path, body });
-      mergeIntoAvailableTags(appState.form.tags);
+      mergeIntoAvailableTags(appState.form.tags, appState.form.type);
       _applyTxLocally(method, editId, body);
       await closeModal({ force: true });
       renderAll();
@@ -338,14 +319,19 @@ function _applyTxLocally(method, editId, body) {
   if (appState.ledger.all) appState.ledger.all.push(tx);
 }
 
-function mergeIntoAvailableTags(tags) {
+// `type` is the booking's own type so the optimistic bump lands on the same
+// side the server will count it on — otherwise the chips would re-rank the
+// moment the next /api/tags load corrected us.
+function mergeIntoAvailableTags(tags, type) {
   if (!Array.isArray(tags) || !tags.length) return;
   const lower = new Set(appState.ledger.availableTags.map((t) => t.toLowerCase()));
+  const side = type === 'in' ? 'in' : 'out';
   let changed = false;
   for (const t of tags) {
     const v = (t || '').trim().toLowerCase();
     if (!v) continue;
-    tagCounts.set(v, (tagCounts.get(v) || 0) + 1);
+    const use = _tagUse(v);
+    tagCounts.set(v, { ...use, all: use.all + 1, [side]: use[side] + 1 });
     if (!lower.has(v)) {
       appState.ledger.availableTags.push(v);
       lower.add(v);

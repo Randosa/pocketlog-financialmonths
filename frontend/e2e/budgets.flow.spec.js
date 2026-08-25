@@ -6,7 +6,15 @@
 // itself lives in the backend suite), the category cannot be deleted while the
 // budget references it, and deleting the budget leaves the bookings untouched.
 const { test, expect } = require('@playwright/test');
-const { loginViaApi, bootIntoApp, expectNoRawKeys, gotoPanel, selectLabels } = require('./helpers');
+const {
+  loginViaApi,
+  bootIntoApp,
+  expectNoRawKeys,
+  gotoPanel,
+  catChooserOffers,
+  chooseCategory,
+  chosenCategoryId,
+} = require('./helpers');
 
 const RUN = Date.now();
 const CAT = `FlowBudgetCat ${RUN}`;
@@ -29,7 +37,7 @@ test('budget usage, category conflicts and delete protection', async ({ page }) 
   // --- Budget on that category: 100 per month ---
   await page.evaluate(() => window.openBudgetModal());
   await expect(page.locator('#budgetModalOverlay')).toHaveClass(/open/);
-  await page.selectOption('#budgetEditCategory', { label: CAT });
+  await chooseCategory(page, 'budget', CAT);
   await page.fill('#budgetEditAmount', '100');
   await page.selectOption('#budgetEditFrequency', 'monthly');
   await page.evaluate(() => window.saveBudgetEdit());
@@ -48,7 +56,7 @@ test('budget usage, category conflicts and delete protection', async ({ page }) 
   await page.evaluate(() => window.setType('out'));
   await page.fill('#inputAmount', '25');
   await page.fill('#inputDesc', TX_DESC);
-  await page.selectOption('#inputCat', { label: CAT });
+  await chooseCategory(page, 'transaction', CAT);
   await page.click('#submitBtn');
   await expect(page.locator('#modalOverlay')).not.toHaveClass(/open/);
 
@@ -63,7 +71,7 @@ test('budget usage, category conflicts and delete protection', async ({ page }) 
   //     option that can only fail on Save. ---
   await page.evaluate(() => window.openBudgetModal());
   await expect(page.locator('#budgetModalOverlay')).toHaveClass(/open/);
-  expect(await selectLabels(page, 'budgetEditCategory')).not.toContain(CAT);
+  expect(await catChooserOffers(page, 'budget', CAT)).toBe(false);
   await page.evaluate(() => window.closeBudgetModal());
 
   // --- …while editing that same budget keeps its own category listed and
@@ -74,14 +82,9 @@ test('budget usage, category conflicts and delete protection', async ({ page }) 
     window.openBudgetModal(budget.id);
   }, CAT);
   await expect(page.locator('#budgetModalOverlay')).toHaveClass(/open/);
-  expect(await selectLabels(page, 'budgetEditCategory')).toContain(CAT);
-  await expect(page.locator('#budgetEditCategory')).toHaveValue(
-    String(
-      await page.evaluate(
-        (name) => appState.ledger.categories.find((c) => c.name === name).id,
-        CAT,
-      ),
-    ),
+  expect(await catChooserOffers(page, 'budget', CAT)).toBe(true);
+  expect(await chosenCategoryId(page, 'budget')).toBe(
+    await page.evaluate((name) => appState.ledger.categories.find((c) => c.name === name).id, CAT),
   );
   await page.evaluate(() => window.closeBudgetModal());
 

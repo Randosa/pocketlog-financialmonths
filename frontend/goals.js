@@ -131,10 +131,11 @@ function _goalTakenCategoryIds(exceptId) {
   return new Set(appState.goals.list.filter((g) => g.id !== exceptId).map((g) => g.category_id));
 }
 
+// The chooser filters the taken categories itself (CAT_CHOOSERS.goal.taken),
+// so this only seeds the selection.
 function populateGoalCategorySelect(selectedId) {
-  const sel = document.getElementById('goalEditCategory');
-  if (sel)
-    _populateCategorySelect(sel, selectedId, _goalTakenCategoryIds(appState.goals.editingId));
+  resetCatChooser('goal', selectedId);
+  remeasureCatChooser('goal');
 }
 
 // A goal on the "Urlaub" category is almost always called "Urlaub", so the
@@ -145,10 +146,9 @@ function populateGoalCategorySelect(selectedId) {
 function _syncGoalNameToCategory() {
   if (appState.goals.editingId) return;
   const field = document.getElementById('goalEditName');
-  const sel = document.getElementById('goalEditCategory');
-  if (!field || !sel) return;
+  if (!field) return;
   if (field.value.trim() && field.value !== appState.goals.autoName) return;
-  const cat = appState.ledger.categories.find((c) => c.id === Number(sel.value));
+  const cat = appState.ledger.categories.find((c) => c.id === catChooserValue('goal'));
   field.value = cat ? cat.name : '';
   appState.goals.autoName = field.value;
 }
@@ -175,6 +175,11 @@ function onGoalDirectionChange() {
     dir === 'pay_down' ? tr('goals.initialDebt') : tr('goals.initialSaved');
   document.getElementById('goalTargetLabel').textContent =
     dir === 'pay_down' ? tr('goals.targetRemaining') : tr('goals.targetAmount');
+  // A savings goal fills from income, a debt tracker is paid down by expenses:
+  // the direction is this form's "type", so switching it re-ranks the chips —
+  // and may re-pick the suggested category, which the name follows.
+  rerankChoosersForType('goal');
+  _syncGoalNameToCategory();
 }
 
 function renderGoalColorSwatches() {
@@ -248,7 +253,7 @@ function closeGoalModal() {
 async function saveGoalEdit() {
   const name = document.getElementById('goalEditName').value.trim();
   const direction = document.getElementById('goalEditDirection').value;
-  const categoryId = parseInt(document.getElementById('goalEditCategory').value, 10);
+  const categoryId = catChooserValue('goal');
   const initial = _goalAmountValue('goalEditInitial');
   const target = _goalAmountValue('goalEditTarget');
   const startDate = document.getElementById('goalEditStartDate').value;

@@ -220,7 +220,16 @@ function invalidateReportCache() {
 // current view's slice, loaded per API), categories (loaded per API),
 // appState.ledger.availableTags (the user's distinct tags, alphabetical) and `all` (the full
 // pool used by search). `appState.ledger.all` below maps to appState.ledger.all.
-const tagCounts = new Map(); // tag name (case-folded) → number of uses
+// tag name (case-folded) → {all, in, out} uses inside the backend's 90-day
+// window. The per-type split is what lets the chooser rank its chips against
+// the form's current type (see _compareUsage in utils.js).
+const tagCounts = new Map();
+
+// Usage record for a tag, zeroed when the tag is unknown — every caller reads
+// all three fields, so no call site has to guard.
+function _tagUse(name) {
+  return tagCounts.get(String(name || '').toLowerCase()) || { all: 0, in: 0, out: 0 };
+}
 
 // ── API HELPER ────────────────────────────────────────────────────────────────
 // Same-origin cookie session. The CSRF token is collected on login /
