@@ -61,18 +61,19 @@ const appState = {
   //
   // Unlike tags the row is capped by measured rows rather than by count: chip
   // widths follow the category names, so a fixed number packs into anything
-  // from one row to three. `capped` is how many the last measurement kept.
+  // from one row to three. That cap is applied to the DOM directly, so nothing
+  // about it is held here.
   //
   // `auto` marks a selection the form picked itself (the top-ranked category)
   // rather than one the user tapped. Switching the type re-picks an automatic
   // choice — otherwise flipping to income would leave the expense default
   // selected — but never overrides a deliberate one.
   catChooser: {
-    transaction: { query: '', shown: [], overflow: 0, selectedId: null, capped: 0, auto: true },
-    recurring: { query: '', shown: [], overflow: 0, selectedId: null, capped: 0, auto: true },
-    goal: { query: '', shown: [], overflow: 0, selectedId: null, capped: 0, auto: true },
-    budget: { query: '', shown: [], overflow: 0, selectedId: null, capped: 0, auto: true },
-    bulk: { query: '', shown: [], overflow: 0, selectedId: null, capped: 0, auto: true },
+    transaction: { query: '', shown: [], overflow: 0, selectedId: null, auto: true },
+    recurring: { query: '', shown: [], overflow: 0, selectedId: null, auto: true },
+    goal: { query: '', shown: [], overflow: 0, selectedId: null, auto: true },
+    budget: { query: '', shown: [], overflow: 0, selectedId: null, auto: true },
+    bulk: { query: '', shown: [], overflow: 0, selectedId: null, auto: true },
   },
 
   // Reports view. `current` is the active report id (restored from

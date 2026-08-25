@@ -148,7 +148,6 @@
     "searchOrCreate": "Search or add a category",
     "createChip": "+ Add “{name}”",
     "moreResults": "… and {n} more",
-    "moreAvailable": "{n} more — type to search",
     "chooseAria": "Choose category “{name}”",
     "deleteConfirm": "Really delete this category?",
     "deleteInUse": "This category is still used by transactions and can’t be deleted.",

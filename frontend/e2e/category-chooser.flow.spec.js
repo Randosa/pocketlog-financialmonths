@@ -110,15 +110,22 @@ test('category chooser: capped rows, type-aware ranking, and create-on-no-match'
   await page.click('.fab');
   await expect(page.locator('#modalOverlay')).toHaveClass(/open/);
 
-  // --- 1. Two rows, and the hint accounts for everything not shown ---
+  // --- 1. Two rows, and the rest is reached through the field rather than
+  //        announced: at rest the row is a shortlist on purpose, so it says
+  //        nothing about what it leaves out. ---
   await expect
     .poll(() => chipRowCount(page), { message: 'chip row capped to two rows' })
     .toBeLessThanOrEqual(2);
   const shown = await catChipLabels(page, 'transaction');
   const total = await page.evaluate(() => appState.ledger.categories.length);
   expect(shown.length).toBeLessThan(total);
+  await expect(page.locator('#catSuggestionsHint')).toBeHidden();
+
+  // The hint speaks only about a search: a query nothing matches says so.
+  await page.fill('#catSearch', `nichts-passt-${RUN}`);
   await expect(page.locator('#catSuggestionsHint')).toBeVisible();
-  await expect(page.locator('#catSuggestionsHint')).toContainText(String(total - shown.length));
+  await page.fill('#catSearch', '');
+  await expect(page.locator('#catSuggestionsHint')).toBeHidden();
 
   // --- 2. Ranking follows the type. The income category has twice the
   //        bookings of the expense one, so a count-only ranking would put it

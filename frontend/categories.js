@@ -413,7 +413,6 @@ function renderCatChooser(ctx) {
       : '';
 
   if (query) {
-    view.capped = view.shown.length;
     row.innerHTML = view.shown.map((c) => _catChipMarkup(ctx, c)).join('') + createChip;
   } else {
     row.innerHTML = view.shown.map((c) => _catChipMarkup(ctx, c)).join('');
@@ -439,10 +438,7 @@ function _capCatChooserRows(ctx) {
   const view = appState.catChooser[ctx];
   if (!row) return;
   const chips = [...row.children];
-  if (!chips.length) {
-    view.capped = 0;
-    return;
-  }
+  if (!chips.length) return;
   let keep;
   if (row.offsetParent === null) {
     keep = Math.min(CAT_CHOOSER_BLIND_CAP, chips.length);
@@ -451,7 +447,6 @@ function _capCatChooserRows(ctx) {
     const allowed = new Set(tops.slice(0, CAT_CHOOSER_ROWS));
     keep = chips.filter((c) => allowed.has(c.offsetTop)).length;
   }
-  view.capped = keep;
   if (keep < chips.length) {
     row.innerHTML = view.shown
       .slice(0, keep)
@@ -463,21 +458,20 @@ function _capCatChooserRows(ctx) {
   }
 }
 
+// The hint only speaks about a search. At rest the row is deliberately a
+// shortlist, and counting what it leaves out says nothing the user can act on
+// — the search field above already offers the way to the rest.
 function _renderCatChooserHint(ctx) {
   const hint = document.getElementById(CAT_CHOOSERS[ctx].hint);
   if (!hint) return;
   const view = appState.catChooser[ctx];
-  const query = view.query.trim();
-  const hidden = query ? view.overflow : Math.max(0, _catChooserPool(ctx).length - view.capped);
-  const message = query
-    ? view.shown.length === 0
+  const message = !view.query.trim()
+    ? ''
+    : view.shown.length === 0
       ? tr('categories.searchNone')
       : view.overflow > 0
         ? tr('categories.moreResults', { n: view.overflow })
-        : ''
-    : hidden > 0
-      ? tr('categories.moreAvailable', { n: hidden })
-      : '';
+        : '';
   hint.textContent = message;
   hint.hidden = !message;
 }
