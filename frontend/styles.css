@@ -3213,8 +3213,12 @@
         gap: var(--space-8);
         background: transparent;
         /* --chip-outline, not a hairline: a chip is bounded by nothing but its
-           line, so it needs the stronger tone every other tag chip uses. The
-           hairline it had before all but vanished in dark mode (0.14 alpha). */
+           line, so it needs the stronger tone every other tag chip uses.
+           Measured against the card behind it, this lifts 1.49:1 -> 2.30:1 in
+           light. Dark gains far less (1.40 -> 1.67): a low-alpha light hairline
+           over a dark ground still composites well clear of it, so the raw
+           0.14 alpha overstates how faint it looked. Raising the dark token
+           would change every chip in the app, not just these. */
         border: 0.5px solid var(--chip-outline);
         border-radius: var(--r-pill);
         padding: var(--space-8) var(--space-12);
