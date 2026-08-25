@@ -1282,31 +1282,12 @@
           <h2 id="tagPickerTitle">Tag hinzufügen</h2>
         </div>
         <div class="modal-body">
-          <div class="form-group" id="tagPickerNewGroup">
-            <label data-i18n="tags.newLabel">Neuen Tag anlegen</label>
-            <div class="tag-create-row">
-              <input
-                type="text"
-                id="tagPickerNew"
-                maxlength="64"
-                placeholder="Neuer Tag"
-                data-i18n-attr="placeholder:tags.newPlaceholder"
-                autocomplete="off"
-                data-action-keydown="handleTagPickerNew" data-args='["@event"]'
-              />
-              <button
-                type="button"
-                class="tag-add-btn"
-                data-action="addTagFromPicker"
-                aria-label="Tag erstellen"
-                data-i18n-attr="aria-label:tags.createAria"
-              >
-                <svg class="ui-icon" aria-hidden="true"><use href="#icon-plus" /></svg>
-              </button>
-            </div>
-          </div>
-          <div class="form-group" id="tagPickerExistingGroup">
-            <label data-i18n="tags.existing">Vorhandene Tags</label>
+          <div class="form-group">
+            <label id="tagPickerLabel" for="tagPickerFilter" data-i18n="tx.tags">Tags</label>
+            <!-- One field for both jobs, as in the booking form: it searches,
+                 and when adding it also offers to create what was typed.
+                 openTagPickerFor swaps the placeholder for the remove mode,
+                 which can only touch tags that are already there. -->
             <div class="search-wrap tag-picker-search">
               <span class="search-icon" aria-hidden="true">
                 <svg class="ui-icon"><use href="#icon-search" /></svg>
@@ -1315,21 +1296,22 @@
                 class="search-input"
                 id="tagPickerFilter"
                 type="search"
-                placeholder="Tags durchsuchen"
-                data-i18n-attr="placeholder:tags.searchPlaceholder"
-                enterkeyhint="search"
+                maxlength="64"
+                placeholder="Tags suchen oder anlegen"
+                data-i18n-attr="placeholder:tags.searchOrCreate"
+                enterkeyhint="done"
                 inputmode="search"
-                data-action-input="renderTagPickerChips"
                 autocomplete="off"
                 autocorrect="off"
                 autocapitalize="off"
                 spellcheck="false"
+                data-action-input="renderTagPickerChips"
+                data-action-keydown="handleTagPickerKey"
+                data-args='["@value", "@event"]'
               />
             </div>
-            <!-- No inline data-empty fallback: i18n.js sets the attribute during
-                 boot (setLocale -> applyStatic), long before the picker can be
-                 opened, and the pseudo-element renders nothing without it. -->
-            <div class="tag-picker-chips" id="tagPickerChips" data-i18n-attr="data-empty:tags.searchNone"></div>
+            <div class="tag-picker-chips" id="tagPickerChips" role="group" aria-labelledby="tagPickerLabel"></div>
+            <p class="tag-chooser-hint" id="tagPickerHint" role="status" hidden></p>
           </div>
         </div>
         <div class="modal-footer">
