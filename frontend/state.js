@@ -182,6 +182,10 @@ const appState = {
     list: [],
     editingId: null,
     editingColor: '#9e9b96',
+    // Last name the new-goal form filled in from the selected category.
+    // Comparing against it is how _syncGoalNameToCategory tells an
+    // untouched suggestion from something the user typed.
+    autoName: '',
   },
 
   // Budgets list + edit modal draft (per-category spending caps).

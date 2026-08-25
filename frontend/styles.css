@@ -1194,6 +1194,20 @@
         font-weight: 500;
         color: var(--text);
         line-height: 1.4;
+        cursor: pointer;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      /* No :active feedback — same call as .transaction and .cat-view-row:
+         touch-start fires it during inertial scroll and the chip flashes.
+         Keyboard activation keeps its feedback via is-key-active. */
+      .t-tag.is-key-active {
+        opacity: 0.55;
+        transition: opacity var(--dur-fast) ease;
+      }
+      .t-tag:focus-visible {
+        outline: none;
+        box-shadow: var(--focus-ring);
       }
       .t-amount {
         font-family: var(--font-display);

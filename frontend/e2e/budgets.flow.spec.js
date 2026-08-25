@@ -1,12 +1,12 @@
 // Budget lifecycle against a running PocketLog build.
 //
 // Pins the 1:1 category↔budget contract end-to-end: consumption is derived
-// from the linked category's expenses (never stored), a second budget on the
-// same category is rejected (409 → translated toast), the category cannot be
-// deleted while the budget references it, and deleting the budget leaves the
-// bookings untouched.
+// from the linked category's expenses (never stored), a category that already
+// carries a budget is no longer offered when creating the next one (the 409
+// itself lives in the backend suite), the category cannot be deleted while the
+// budget references it, and deleting the budget leaves the bookings untouched.
 const { test, expect } = require('@playwright/test');
-const { loginViaApi, bootIntoApp, expectNoRawKeys, gotoPanel } = require('./helpers');
+const { loginViaApi, bootIntoApp, expectNoRawKeys, gotoPanel, selectLabels } = require('./helpers');
 
 const RUN = Date.now();
 const CAT = `FlowBudgetCat ${RUN}`;
@@ -55,17 +55,34 @@ test('budget usage, category conflicts and delete protection', async ({ page }) 
   await gotoPanel(page, 'budgets');
   await expect(card).toContainText('25%');
 
-  // --- 1:1 contract: a second budget on the same category is a 409, surfaced
-  //     as a translated toast; the twin is never created ---
+  // --- 1:1 contract, enforced before the user can act on it: a fresh create
+  //     picker no longer lists the category that already carries a budget, so
+  //     the conflict cannot be built in the first place. The 409 behind it
+  //     stays pinned in the backend suite (test_budgets.py); the category
+  //     turning up here again would mean the picker went back to offering an
+  //     option that can only fail on Save. ---
   await page.evaluate(() => window.openBudgetModal());
   await expect(page.locator('#budgetModalOverlay')).toHaveClass(/open/);
-  await page.selectOption('#budgetEditCategory', { label: CAT });
-  await page.fill('#budgetEditAmount', '50');
-  await page.evaluate(() => window.saveBudgetEdit());
-  // .last(): error toasts dwell 5 s, so an earlier one may still be alive —
-  // a bare locator would then be ambiguous under strict mode.
-  await expect(page.locator('#toastHost .toast.error').last()).toBeVisible();
-  await expectNoRawKeys(page, 'budget conflict toast');
+  expect(await selectLabels(page, 'budgetEditCategory')).not.toContain(CAT);
+  await page.evaluate(() => window.closeBudgetModal());
+
+  // --- …while editing that same budget keeps its own category listed and
+  //     selected, or the form could not round-trip its own record. ---
+  await page.evaluate((name) => {
+    const cat = appState.ledger.categories.find((c) => c.name === name);
+    const budget = appState.budgets.list.find((b) => b.category_id === cat.id);
+    window.openBudgetModal(budget.id);
+  }, CAT);
+  await expect(page.locator('#budgetModalOverlay')).toHaveClass(/open/);
+  expect(await selectLabels(page, 'budgetEditCategory')).toContain(CAT);
+  await expect(page.locator('#budgetEditCategory')).toHaveValue(
+    String(
+      await page.evaluate(
+        (name) => appState.ledger.categories.find((c) => c.name === name).id,
+        CAT,
+      ),
+    ),
+  );
   await page.evaluate(() => window.closeBudgetModal());
 
   // --- Delete protection: the category is blocked while the budget (and the

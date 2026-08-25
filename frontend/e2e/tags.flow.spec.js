@@ -247,3 +247,74 @@ test('bulk picker: same one-field chooser, staged selection reaches the marked r
 
   expect(pageErrors, 'no uncaught page errors').toEqual([]);
 });
+
+test('ledger row: a tag chip filters by that tag instead of opening the booking', async ({
+  page,
+}) => {
+  const pageErrors = [];
+  page.on('pageerror', (e) => pageErrors.push(e.message));
+
+  await loginViaApi(page.context());
+  await bootIntoApp(page);
+
+  // Two bookings, one tag apart. The filter has to keep the first and drop the
+  // second, so "the panel opened" is not enough to pass.
+  const TAG = `RowDrill${RUN}`;
+  const HIT = `FlowRowDrillHit ${RUN}`;
+  const MISS = `FlowRowDrillMiss ${RUN}`;
+  await page.evaluate(
+    async ([tag, hit, miss]) => {
+      const cats = await api('GET', '/categories');
+      const today = new Date().toISOString().slice(0, 10);
+      const base = { amount: 3.5, category_id: cats[0].id, date: today, type: 'out' };
+      await api('POST', '/transactions', { ...base, desc: hit, tags: [tag] });
+      await api('POST', '/transactions', { ...base, desc: miss, tags: [] });
+      await loadAndRender();
+    },
+    [TAG, HIT, MISS],
+  );
+
+  // Scoped to the ledger list: the search panel keeps its last results in the
+  // DOM after it closes, so a bare `.tx-row` matches the same booking twice.
+  const ledgerRow = (desc) => page.locator('#transactionList .tx-row', { hasText: desc });
+  const row = ledgerRow(HIT);
+  await expect(row).toHaveCount(1);
+  const chip = row.locator(`.t-tag[data-tag="${TAG}"]`);
+  await expect(chip).toHaveCount(1);
+
+  // The chip and the row it sits in do different things on the same gesture.
+  // The booking modal staying shut is half the assertion.
+  await chip.click();
+  await expect(page.locator('#panel-search')).toHaveClass(/active/);
+  await expect(page.locator('#modalOverlay')).not.toHaveClass(/open/);
+  await expect(page.locator('#searchInput')).toHaveValue(TAG);
+  await expect(page.locator('#searchResultsList')).toContainText(HIT);
+  await expect(page.locator('#searchResultsList')).not.toContainText(MISS);
+  // Exact match on the tag, not the substring search — a stale category
+  // drill-down would otherwise win, applySearch checks that one first.
+  expect(await page.evaluate(() => appState.nav.tagFilterName)).toBe(TAG);
+  expect(await page.evaluate(() => appState.nav.categoryFilterId)).toBeNull();
+
+  await page.click('.fab.search-exit');
+  await expect(page.locator('#panel-transactions')).toHaveClass(/active/);
+
+  // Tapping the row itself still edits it — the chip must not have swallowed
+  // the row's own gesture.
+  await row.locator('.t-note').click();
+  await expect(page.locator('#modalOverlay')).toHaveClass(/open/);
+  await expect(page.locator('#inputDesc')).toHaveValue(HIT);
+  await page.evaluate(() => closeModal());
+  await expect(page.locator('#modalOverlay')).not.toHaveClass(/open/);
+
+  // The chip is a control, so it has to answer the keyboard too. It was a
+  // bare <span> with no way in at all before.
+  const chipAgain = ledgerRow(HIT).locator(`.t-tag[data-tag="${TAG}"]`);
+  await chipAgain.focus();
+  await expect(chipAgain).toBeFocused();
+  await chipAgain.press('Enter');
+  await expect(page.locator('#panel-search')).toHaveClass(/active/);
+  await expect(page.locator('#searchResultsList')).toContainText(HIT);
+
+  await expectNoRawKeys(page, 'tag drill-down results');
+  expect(pageErrors, `Uncaught page errors: ${pageErrors.join(' | ')}`).toEqual([]);
+});

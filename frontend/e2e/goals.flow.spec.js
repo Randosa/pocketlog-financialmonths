@@ -1,12 +1,12 @@
 // Savings-goal lifecycle against a running PocketLog build.
 //
 // Pins the 1:1 category↔goal contract end-to-end: progress is derived from
-// the linked category's bookings (never stored), a second goal on the same
-// category is rejected (409 → translated toast), the category cannot be
-// deleted while the goal references it, and deleting the goal leaves the
-// bookings untouched.
+// the linked category's bookings (never stored), a category that already
+// carries a goal is no longer offered when creating the next one (the 409
+// itself lives in the backend suite), the category cannot be deleted while the
+// goal references it, and deleting the goal leaves the bookings untouched.
 const { test, expect } = require('@playwright/test');
-const { loginViaApi, bootIntoApp, expectNoRawKeys, gotoPanel } = require('./helpers');
+const { loginViaApi, bootIntoApp, expectNoRawKeys, gotoPanel, selectLabels } = require('./helpers');
 
 const RUN = Date.now();
 const CAT = `FlowGoalCat ${RUN}`;
@@ -57,23 +57,46 @@ test('goal progress, category conflicts and delete protection', async ({ page })
   await gotoPanel(page, 'goals');
   await expect(card).toContainText('20');
 
-  // --- 1:1 contract: a second goal on the same category is a 409, surfaced
-  //     as a translated toast; the twin is never created ---
+  // --- 1:1 contract, enforced before the user can act on it: a fresh create
+  //     picker no longer lists the category that already carries a goal, so
+  //     the twin cannot be built in the first place. The 409 behind it stays
+  //     pinned in the backend suite (test_goals.py); the category turning up
+  //     here again would mean the picker went back to offering an option that
+  //     can only fail on Save. ---
   await page.evaluate(() => window.openGoalModal());
   await expect(page.locator('#goalModalOverlay')).toHaveClass(/open/);
-  await page.fill('#goalEditName', `${GOAL} twin`);
-  await page.selectOption('#goalEditCategory', { label: CAT });
-  await page.fill('#goalEditInitial', '0');
-  await page.fill('#goalEditTarget', '300');
-  await page.evaluate(() => window.saveGoalEdit());
-  // .last(): error toasts dwell 5 s, so an earlier one may still be alive —
-  // a bare locator would then be ambiguous under strict mode.
-  await expect(page.locator('#toastHost .toast.error').last()).toBeVisible();
-  await expectNoRawKeys(page, 'goal conflict toast');
-  await page.evaluate(() => window.closeGoalModal());
-  await expect(page.locator('#goalsViewList .goal-card', { hasText: `${GOAL} twin` })).toHaveCount(
-    0,
+  expect(await selectLabels(page, 'goalEditCategory')).not.toContain(CAT);
+  // The name follows the picker while it is still the form's own suggestion.
+  await expect(page.locator('#goalEditName')).toHaveValue(
+    await page.evaluate(
+      () =>
+        appState.ledger.categories.find(
+          (c) => c.id === Number(document.getElementById('goalEditCategory').value),
+        ).name,
+    ),
   );
+  // …and it arrives selected, so it is a starting point rather than something
+  // the user has to clear first. The shell focuses on a timer, hence the poll.
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const f = document.getElementById('goalEditName');
+        return f.value.slice(f.selectionStart, f.selectionEnd);
+      }),
+    )
+    .toBe(await page.evaluate(() => document.getElementById('goalEditName').value));
+  await page.evaluate(() => window.closeGoalModal());
+
+  // --- …while editing that same goal keeps its own category listed and
+  //     selected, and leaves the name the user gave it alone. ---
+  await page.evaluate((name) => {
+    const goal = appState.goals.list.find((g) => g.name === name);
+    window.openGoalModal(goal.id);
+  }, GOAL);
+  await expect(page.locator('#goalModalOverlay')).toHaveClass(/open/);
+  expect(await selectLabels(page, 'goalEditCategory')).toContain(CAT);
+  await expect(page.locator('#goalEditName')).toHaveValue(GOAL);
+  await page.evaluate(() => window.closeGoalModal());
 
   // --- Delete protection: the category is blocked while the goal (and the
   //     booking) reference it ---
