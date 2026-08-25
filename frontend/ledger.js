@@ -255,10 +255,25 @@ function renderTransactions(txs, el = document.getElementById('transactionList')
             const recurringBadge = t.source_rule_id
               ? `<span class="tx-recurring-badge" role="img" aria-label="${_escAttr(tr('recurring.fromRule'))}" title="${_escAttr(tr('recurring.fromRule'))}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-arrows-clockwise"/></svg></span>`
               : '';
-            const selCls = appState.selection.ids.includes(t.id) ? ' selected' : '';
+            const chosen = appState.selection.ids.includes(t.id);
+            const selCls = chosen ? ' selected' : '';
+            // Keyboard handle for the row. In select mode it reports the row's
+            // state instead of naming an edit it would not perform — the same
+            // split the tap makes.
+            const openLabel = appState.selection.active
+              ? tr('tx.selectAria', {
+                  name: note || cat.name,
+                  amount: fmtCurrency(Math.abs(t.amount)),
+                })
+              : tr('tx.editAria', {
+                  name: note || cat.name,
+                  amount: fmtCurrency(Math.abs(t.amount)),
+                });
+            const pressed = appState.selection.active ? ` aria-pressed="${chosen}"` : '';
             return `<div class="tx-row${selCls}" data-id="${t.id}">
         <button class="tx-action" type="button" aria-label="${_escAttr(tr('tx.deleteAria'))}">${tr('common.delete')}</button>
         <div class="transaction">
+          <button class="tx-open" type="button"${pressed} aria-label="${_escAttr(openLabel)}"></button>
           <span class="tx-select-check" aria-hidden="true"><svg class="ui-icon"><use href="#icon-check"/></svg></span>
           <div class="t-icon" style="--cat-color:${cat.color}">${catIconSvg(cat.icon)}</div>
           <span class="visually-hidden">${_escText(cat.name)}</span>
@@ -277,6 +292,16 @@ function renderTransactions(txs, el = document.getElementById('transactionList')
     })
     .join('');
   attachSwipeHandlers(el);
+  // The pointer never reaches .tx-open (pointer-events: none), so this only
+  // ever fires from the keyboard — no risk of doubling up with the row's own
+  // gesture handler. It mirrors what a tap does, select mode included.
+  el.querySelectorAll('.tx-open').forEach((btn) => {
+    const id = Number(btn.closest('.tx-row').dataset.id);
+    btn.addEventListener('click', () => {
+      if (appState.selection.active) toggleSelect(id);
+      else editTransaction(id);
+    });
+  });
   // Keyboard half of the tag chip. The pointer half lives in the row's
   // gesture handler; only Enter/Space needs its own listener, and it must
   // not be a click listener (see the chip markup above).
@@ -592,6 +617,9 @@ function toggleSelect(id) {
   const sel = appState.selection.ids.includes(id);
   document.querySelectorAll(`.tx-row[data-id="${id}"]`).forEach((row) => {
     row.classList.toggle('selected', sel);
+    // The keyboard handle carries the state a screen reader hears; the
+    // targeted update has to keep it in step with the class.
+    row.querySelector('.tx-open')?.setAttribute('aria-pressed', String(sel));
   });
   updateSelectionBar();
 }

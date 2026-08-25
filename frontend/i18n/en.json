@@ -362,6 +362,8 @@
     "saveIncome": "Save income",
     "deleteConfirm": "Really delete this transaction?",
     "deleteAria": "Delete transaction",
+    "editAria": "Edit transaction: {name}, {amount}",
+    "selectAria": "{name}, {amount}",
     "tagFilterAria": "Show transactions tagged {name}",
     "notFound": "Transaction not found.",
     "amountDateRequired": "Enter an amount and a date.",

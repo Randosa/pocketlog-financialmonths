@@ -793,6 +793,22 @@ function toggleSidebar() {
 // aria-pressed attribute with the class state set by the inline
 // head boot script.
 _syncSidebarTogglePressed(document.documentElement.classList.contains('sidebar-collapsed'));
+// The drawer starts closed, so it starts inert on a phone.
+_syncDrawerInert();
+
+// A closed drawer is only pushed off-screen, not hidden, so its ~70 controls
+// stayed in the tab order: tabbing from the top of the page walked the whole
+// menu at x=-283 before reaching the ledger. `inert` takes the subtree out of
+// focus, hit-testing and the accessibility tree in one attribute.
+//
+// Above the tablet breakpoint the same element is a permanently visible
+// sidebar — there it must stay reachable, which is also why openDrawer and
+// closeDrawer bail out in that mode.
+function _syncDrawerInert() {
+  const drawer = document.getElementById('drawer');
+  if (!drawer) return;
+  drawer.inert = !_mqTablet.matches && !drawer.classList.contains('open');
+}
 
 function openDrawer() {
   if (_mqTablet.matches) return;
@@ -800,6 +816,9 @@ function openDrawer() {
   document.getElementById('drawer').classList.add('open');
   document.getElementById('drawerOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
+  // Before trapFocusIn: the trap moves focus inside, which an inert
+  // subtree would refuse.
+  _syncDrawerInert();
   trapFocusIn(document.getElementById('drawer'), 'drawer');
 }
 
@@ -809,7 +828,10 @@ function closeDrawer() {
   document.getElementById('drawerOverlay').classList.remove('open');
   document.body.style.overflow = '';
   releaseFocusTrap('drawer');
+  // After restoreModalFocus: focus has to leave the subtree before it goes
+  // inert, or the browser drops it to <body>.
   restoreModalFocus('drawer');
+  _syncDrawerInert();
   // _drawerStack and sub-panel data-state are deliberately kept:
   // re-opening the drawer should land back on the last sub-panel
   // the user was on (e.g. Auswertungen), not always reset to the
@@ -820,6 +842,10 @@ function closeDrawer() {
 // overlay is open would leave the body scroll-locked. Reset state
 // when we enter sidebar mode.
 _mqTablet.addEventListener('change', (e) => {
+  // Crossing the breakpoint either way changes whether the drawer is a
+  // sidebar (reachable) or an off-screen menu (inert), so sync first and
+  // leave before the sidebar-mode-only reset below.
+  _syncDrawerInert();
   if (!e.matches) return;
   document.getElementById('drawer').classList.remove('open');
   document.getElementById('drawerOverlay').classList.remove('open');

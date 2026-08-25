@@ -362,6 +362,8 @@
     "saveIncome": "Einnahme speichern",
     "deleteConfirm": "Buchung wirklich löschen?",
     "deleteAria": "Buchung löschen",
+    "editAria": "Buchung bearbeiten: {name}, {amount}",
+    "selectAria": "{name}, {amount}",
     "tagFilterAria": "Buchungen mit dem Tag {name} anzeigen",
     "notFound": "Buchung wurde nicht gefunden.",
     "amountDateRequired": "Gib Betrag und Datum ein.",
