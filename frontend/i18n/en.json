@@ -143,6 +143,8 @@
     "pickColorAria": "Choose color {name}",
     "invalidColor": "That color is invalid. A valid hex value is required, e.g. #D97757.",
     "exists": "A category with this name already exists.",
+    "searchPlaceholder": "Search categories",
+    "searchNone": "No categories found.",
     "deleteConfirm": "Really delete this category?",
     "deleteInUse": "This category is still used by transactions and can’t be deleted.",
     "deleteHasRecurring": "Category is still used by a recurring rule.",
@@ -295,6 +297,7 @@
   "tags": {
     "title": "Tags",
     "create": "Create tag",
+    "editAria": "Edit tag “{name}”",
     "editTitle": "Edit tag",
     "newTitle": "New tag",
     "name": "Name",

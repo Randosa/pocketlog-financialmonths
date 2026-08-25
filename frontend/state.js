@@ -200,6 +200,11 @@ const appState = {
   },
 
   // Tag rename modal draft. editingTagName.
+  // Filter text of the drawer's two management lists. Not persisted: the
+  // field only exists while the panel is open (see applyDrawerFilter).
+  drawer: {
+    filter: { cats: '', tags: '' },
+  },
   tagEdit: {
     name: null,
   },
