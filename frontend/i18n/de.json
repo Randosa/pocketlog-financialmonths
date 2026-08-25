@@ -143,6 +143,8 @@
     "pickColorAria": "Farbe {name} wählen",
     "invalidColor": "Die Farbe ist ungültig. Ein gültiger Hex-Wert wird benötigt, z. B. #D97757.",
     "exists": "Eine Kategorie mit diesem Namen existiert bereits.",
+    "searchPlaceholder": "Kategorien durchsuchen",
+    "searchNone": "Keine Kategorien gefunden.",
     "deleteConfirm": "Kategorie wirklich löschen?",
     "deleteInUse": "Kategorie wird noch in Buchungen verwendet und kann nicht gelöscht werden.",
     "deleteHasRecurring": "Kategorie wird noch in einer wiederkehrenden Buchung verwendet.",
@@ -295,6 +297,7 @@
   "tags": {
     "title": "Tags",
     "create": "Tag erstellen",
+    "editAria": "Tag „{name}“ bearbeiten",
     "editTitle": "Tag bearbeiten",
     "newTitle": "Neuer Tag",
     "name": "Name",

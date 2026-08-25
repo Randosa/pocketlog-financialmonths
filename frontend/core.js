@@ -837,6 +837,52 @@ function handleRowActivate(e, fn) {
   }
 }
 
+// ── DRAWER LIST FILTER ────────────────────────────────────────────────────────
+// The drawer's two management lists — categories and tags — are plain lists of
+// names in a 300px-wide panel. A permanent filter field there would cost a full
+// row of that width for a list you can usually take in at a glance, so it
+// appears only once the list stops fitting: above DRAWER_FILTER_MIN entries.
+// Both panels share this so neither grows an affordance the other lacks.
+const DRAWER_FILTER_MIN = 10;
+
+const DRAWER_LISTS = {
+  cats: { wrap: 'dpCatSearchWrap', input: 'dpCatSearch' },
+  tags: { wrap: 'dpTagSearchWrap', input: 'dpTagSearch' },
+};
+
+// Shows or hides the field for this list and returns the entries to render.
+// Called by renderCategories / renderTagList, which own their row markup.
+function applyDrawerFilter(key, entries, nameOf) {
+  const cfg = DRAWER_LISTS[key];
+  if (!cfg) return entries;
+  const wrap = document.getElementById(cfg.wrap);
+  const show = entries.length > DRAWER_FILTER_MIN;
+  if (wrap) wrap.hidden = !show;
+  // A field that just went off screen must not keep filtering behind it —
+  // deleting entries down past the threshold would otherwise hide rows with
+  // no visible control left to clear.
+  if (!show && appState.drawer.filter[key]) {
+    appState.drawer.filter[key] = '';
+    const input = document.getElementById(cfg.input);
+    if (input) input.value = '';
+  }
+  const q = appState.drawer.filter[key].trim().toLowerCase();
+  return q ? entries.filter((e) => nameOf(e).toLowerCase().includes(q)) : entries;
+}
+
+// True while a filter is narrowing the list, so the renderers can tell an
+// empty account ("no tags yet") from a query that matched nothing.
+function drawerFilterActive(key) {
+  return !!(DRAWER_LISTS[key] && appState.drawer.filter[key].trim());
+}
+
+function filterDrawerList(key, value) {
+  if (!DRAWER_LISTS[key]) return;
+  appState.drawer.filter[key] = value || '';
+  if (key === 'cats') renderCategories();
+  else renderTagList();
+}
+
 // ── MODAL FOCUS MANAGEMENT ────────────────────────────────────────────────────
 // Each modal stores the element that had focus before it opened, so the
 // matching close() can restore it. Keyed by modal id to support nesting

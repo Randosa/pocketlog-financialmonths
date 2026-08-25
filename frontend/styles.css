@@ -197,7 +197,7 @@
 
         /* Spacing scale — Zahl im Namen = px-Wert. 4-px-Raster plus 10 / 14
        als gängige iOS-Zwischenstufen und 2 / 56 für Sonderfälle
-       (.tag-pill negative, .empty-state Padding). Halbschritte wurden
+       (Badge-Versatz, .empty-state Padding). Halbschritte wurden
        in Phase 3 auf das Raster zusammengezogen. */
         --space-2: 2px;
         --space-4: 4px;
@@ -2167,40 +2167,6 @@
         flex: 1;
       }
 
-      .tag-pill {
-        background: var(--bg-grouped);
-        border: var(--border-hairline);
-        border-radius: var(--r-pill);
-        padding: var(--space-4) var(--space-12);
-        font-size: var(--fs-micro);
-        font-weight: 500;
-        display: flex;
-        align-items: center;
-        gap: var(--space-4);
-        /* Pinned so the pill keeps its size independently of the remove
-           button, whose box is pulled back by a negative margin below. */
-        min-height: calc(2 * var(--space-16));
-      }
-      /* The glyph is ~14px, the touch target must be 44px (DESIGN_CONVENTIONS
-         "Touch targets"). Conventions call for padding rather than a sized
-         transparent box, so the padding does the work and the equal negative
-         margin keeps the pill itself at its old size — the hit area reaches
-         into the surrounding gap without displacing anything. */
-      .tag-pill button {
-        background: none;
-        border: none;
-        cursor: pointer;
-        color: var(--text3);
-        font-size: var(--fs-footnote);
-        padding: var(--space-16);
-        margin: calc(-1 * var(--space-16));
-        line-height: 1;
-      }
-      .tag-pill button:focus-visible {
-        outline: none;
-        box-shadow: var(--focus-ring);
-      }
-
       /* Both sit in a column of text fields, so they take the field look
          rather than .search-wrap's floating capsule: that one belongs to the
          bottom bar, where it actually floats over the ledger. In a modal the
@@ -2208,7 +2174,8 @@
          flat fields, and 45%-white over the modal ground is visibly greyer
          than the canvas fill beside it. */
       .tag-picker-search,
-      .tag-chooser-search {
+      .tag-chooser-search,
+      .drawer-search {
         /* Same box as .form-group input — see the min-height there. */
         height: calc(2 * var(--space-14) + 1.2 * var(--fs-body));
         padding: 0 var(--space-16);
@@ -2219,7 +2186,7 @@
         border-radius: var(--r-md);
       }
       /* Focus keeps the .search-wrap ring; only the resting elevation goes. */
-      :is(.tag-picker-search, .tag-chooser-search):not(:focus-within) {
+      :is(.tag-picker-search, .tag-chooser-search, .drawer-search):not(:focus-within) {
         box-shadow: none;
       }
       .tag-chooser-search {
@@ -3473,9 +3440,19 @@
       .drawer-section > .save-btn:first-child {
         margin-top: 0;
       }
-      /* Spacing between top button and chip list below */
-      .drawer-section .save-btn + .drawer-chip-list {
+      /* Spacing between the top button and whatever follows it. The list is no
+         longer the button's adjacent sibling — the filter field sits between
+         them — so it needs its own case for when that field is hidden, where
+         display:none takes the field's margin-bottom with it. The first
+         selector still covers a section that has no filter field at all. */
+      .drawer-section .save-btn + .drawer-chip-list,
+      .drawer-section .save-btn + .drawer-search,
+      .drawer-section .drawer-search[hidden] + .drawer-chip-list {
         margin-top: var(--space-12);
+      }
+      /* [hidden] has to beat .search-wrap's display:flex. */
+      .drawer-search[hidden] {
+        display: none;
       }
       /* Categories: drawer-nav card style */
       #catList.drawer-chip-list {
@@ -3529,6 +3506,8 @@
       }
       #tagList .cat-pill-edit {
         width: 100%;
+        display: flex;
+        align-items: center;
         justify-content: flex-start;
         min-height: 50px;
         border-radius: 0 !important;

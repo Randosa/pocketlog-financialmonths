@@ -423,15 +423,17 @@ function handleTagPickerKey(value, e) {
 function renderCategories() {
   const box = document.getElementById('catList');
   if (!box) return;
-  if (!appState.ledger.categories.length) {
-    box.innerHTML = `<p class="empty-state-hint">${tr('categories.none')}</p>`;
-    return;
-  }
   const sorted = [...appState.ledger.categories].sort((a, b) =>
     a.name.localeCompare(b.name, _locale(), { sensitivity: 'base' }),
   );
+  const shown = applyDrawerFilter('cats', sorted, (c) => c.name);
+  if (!shown.length) {
+    // Nothing to show is either an empty account or a query that missed.
+    box.innerHTML = `<p class="empty-state-hint">${tr(drawerFilterActive('cats') ? 'categories.searchNone' : 'categories.none')}</p>`;
+    return;
+  }
   box.innerHTML = '';
-  sorted.forEach((c) => {
+  shown.forEach((c) => {
     const row = document.createElement('div');
     row.className = 'drawer-nav-item cat-pill-edit';
     row.setAttribute('role', 'button');

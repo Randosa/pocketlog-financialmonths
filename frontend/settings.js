@@ -9,17 +9,26 @@
 function renderTagList() {
   const box = document.getElementById('tagList');
   if (!box) return;
-  if (!appState.ledger.availableTags.length) {
-    box.innerHTML = `<p class="empty-state-hint">${tr('tags.none')}</p>`;
+  const shown = applyDrawerFilter('tags', appState.ledger.availableTags, (t) => t);
+  if (!shown.length) {
+    // Nothing to show is either an empty account or a query that missed.
+    box.innerHTML = `<p class="empty-state-hint">${tr(drawerFilterActive('tags') ? 'tags.searchNone' : 'tags.none')}</p>`;
     return;
   }
-  box.innerHTML = appState.ledger.availableTags
+  // Same row contract as renderCategories: the drawer's two management lists
+  // are reached the same way. Without role/tabindex the .is-key-active and
+  // :focus-visible states styled for #tagList could never fire — the row was
+  // pointer-only while its neighbour was not.
+  box.innerHTML = shown
     .map(
-      (t) => `<div class="tag-pill cat-pill-edit" data-tag="${_escAttr(t)}">${_escText(t)}</div>`,
+      (t) =>
+        `<div class="cat-pill-edit" role="button" tabindex="0" data-tag="${_escAttr(t)}" aria-label="${_escAttr(tr('tags.editAria', { name: t }))}">${_escText(t)}</div>`,
     )
     .join('');
   box.querySelectorAll('[data-tag]').forEach((el) => {
-    el.addEventListener('click', () => openTagModal(el.dataset.tag));
+    const open = () => openTagModal(el.dataset.tag);
+    el.addEventListener('click', open);
+    el.addEventListener('keydown', (e) => handleRowActivate(e, open));
   });
 }
 

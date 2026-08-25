@@ -494,6 +494,25 @@
           </div>
           <div class="drawer-section">
             <button class="save-btn" data-action="openCatModal" data-i18n="categories.create">Kategorie erstellen</button>
+            <div class="search-wrap drawer-search" id="dpCatSearchWrap" hidden>
+              <span class="search-icon" aria-hidden="true">
+                <svg class="ui-icon"><use href="#icon-search" /></svg>
+              </span>
+              <input
+                class="search-input"
+                id="dpCatSearch"
+                type="search"
+                data-i18n-attr="placeholder:categories.searchPlaceholder;aria-label:categories.searchPlaceholder"
+                enterkeyhint="search"
+                inputmode="search"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                data-action-input="filterDrawerList"
+                data-args='["cats", "@value"]'
+              />
+            </div>
             <div id="catList" class="drawer-chip-list"></div>
           </div>
         </div>
@@ -513,6 +532,25 @@
           </div>
           <div class="drawer-section">
             <button class="save-btn" data-action="openTagModal" data-i18n="tags.create">Tag erstellen</button>
+            <div class="search-wrap drawer-search" id="dpTagSearchWrap" hidden>
+              <span class="search-icon" aria-hidden="true">
+                <svg class="ui-icon"><use href="#icon-search" /></svg>
+              </span>
+              <input
+                class="search-input"
+                id="dpTagSearch"
+                type="search"
+                data-i18n-attr="placeholder:tags.searchPlaceholder;aria-label:tags.searchPlaceholder"
+                enterkeyhint="search"
+                inputmode="search"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                data-action-input="filterDrawerList"
+                data-args='["tags", "@value"]'
+              />
+            </div>
             <div id="tagList" class="drawer-chip-list"></div>
           </div>
         </div>
