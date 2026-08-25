@@ -130,3 +130,71 @@ test('drawer tag list: filter appears with the list, and rows work by keyboard',
 
   expect(pageErrors, 'no uncaught page errors').toEqual([]);
 });
+
+test('the drawer keeps focus to itself while open, and out of the way while closed', async ({
+  page,
+}) => {
+  const pageErrors = [];
+  page.on('pageerror', (e) => pageErrors.push(e.message));
+
+  await loginViaApi(page.context());
+  await bootIntoApp(page);
+
+  // Closed, the drawer is only pushed off-screen — `inert` is what keeps its
+  // ~70 controls from being the first thing every keyboard user walks through.
+  await expect.poll(() => page.evaluate(() => document.getElementById('drawer').inert)).toBe(true);
+
+  // Opening it hands focus over. The trap listens on the drawer itself, so it
+  // can only wrap around once focus is already inside; without this the menu
+  // opened and tabbing carried on through the page behind it.
+  await page.click('.hamburger-btn');
+  await expect(page.locator('#drawer')).toHaveClass(/open/);
+  await expect.poll(() => page.evaluate(() => document.getElementById('drawer').inert)).toBe(false);
+  await expect
+    .poll(() => page.evaluate(() => !!document.activeElement.closest('#drawer')), {
+      message: 'focus moved into the open drawer',
+    })
+    .toBe(true);
+
+  // Six tabs stay inside — the trap wraps rather than leaking into the page.
+  for (let i = 0; i < 6; i++) {
+    await page.keyboard.press('Tab');
+    expect(
+      await page.evaluate(() => !!document.activeElement.closest('#drawer')),
+      `tab ${i + 1} stayed inside the drawer`,
+    ).toBe(true);
+  }
+
+  // Boot's own panel restore runs at the end of a long load chain, well after
+  // the auth overlay came down — it must not shut a drawer opened in that
+  // window. Pinned as the contract rather than by timing: a navigation closes
+  // the drawer, boot's restore does not.
+  expect(
+    await page.evaluate(() => document.getElementById('drawer').classList.contains('open')),
+  ).toBe(true);
+  await page.evaluate(() => window.showPanel('transactions', { keepDrawer: true }));
+  await expect(page.locator('#drawer'), "boot's panel restore leaves the drawer open").toHaveClass(
+    /open/,
+  );
+  await page.evaluate(() => window.showPanel('transactions'));
+  await expect(page.locator('#drawer'), 'picking a destination closes the drawer').not.toHaveClass(
+    /open/,
+  );
+  await page.click('.hamburger-btn');
+  await expect(page.locator('#drawer')).toHaveClass(/open/);
+  await expect
+    .poll(() => page.evaluate(() => !!document.activeElement.closest('#drawer')))
+    .toBe(true);
+
+  // Closing gives focus back and re-arms inert — in that order, or the browser
+  // would drop focus to <body> as the subtree goes inert.
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#drawer')).not.toHaveClass(/open/);
+  await expect.poll(() => page.evaluate(() => document.getElementById('drawer').inert)).toBe(true);
+  expect(
+    await page.evaluate(() => !!document.activeElement.closest('#drawer')),
+    'focus is not stranded in the now-inert drawer',
+  ).toBe(false);
+
+  expect(pageErrors, `Uncaught page errors: ${pageErrors.join(' | ')}`).toEqual([]);
+});

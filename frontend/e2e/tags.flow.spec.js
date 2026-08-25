@@ -48,7 +48,11 @@ test('booking form: chips are the selection, search reaches every tag, create wo
   // something to find and the counts stay at zero.
   await page.evaluate(async () => {
     for (const name of ['ChooserAlpha', 'ChooserBeta']) {
-      await api('POST', '/tags', { name });
+      try {
+        await api('POST', '/tags', { name });
+      } catch (e) {
+        /* 409: a rerun against the same instance already has it */
+      }
     }
     await loadTags();
   });

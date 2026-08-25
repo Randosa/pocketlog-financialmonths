@@ -126,6 +126,13 @@ def test_unhandled_exception_returns_generic_500(app):
     def _boom():
         raise ValueError("kaboom")
 
+    # StaticFiles is mounted at "/" and matches everything, so a route appended
+    # after it never runs. The mount is absent from a bare source checkout and
+    # present in the image (and in any dev tree that symlinks backend/static),
+    # which is the difference between this test passing and 404-ing. Put ours
+    # in front so it asserts the same thing either way.
+    app.router.routes.insert(0, app.router.routes.pop())
+
     try:
         # Starlette's ServerErrorMiddleware re-raises the original exception
         # after dispatching it to our handler (so dev tools/tracebacks stay

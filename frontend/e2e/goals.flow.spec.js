@@ -73,7 +73,6 @@ test('goal progress, category conflicts and delete protection', async ({ page })
   //     can only fail on Save. ---
   await page.evaluate(() => window.openGoalModal());
   await expect(page.locator('#goalModalOverlay')).toHaveClass(/open/);
-  expect(await catChooserOffers(page, 'goal', CAT)).toBe(false);
   // The name follows the picker while it is still the form's own suggestion.
   await expect(page.locator('#goalEditName')).toHaveValue(
     await page.evaluate(
@@ -82,7 +81,11 @@ test('goal progress, category conflicts and delete protection', async ({ page })
     ),
   );
   // …and it arrives selected, so it is a starting point rather than something
-  // the user has to clear first. The shell focuses on a timer, hence the poll.
+  // the user has to clear first. The shell focuses on a timer, hence the poll —
+  // and this has to come before anything else in the modal is touched: reaching
+  // another field inside that window keeps the caret there on purpose (see
+  // focus.flow.spec.js), so a chooser query first would suppress the very
+  // focus this asserts.
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -91,6 +94,7 @@ test('goal progress, category conflicts and delete protection', async ({ page })
       }),
     )
     .toBe(await page.evaluate(() => document.getElementById('goalEditName').value));
+  expect(await catChooserOffers(page, 'goal', CAT)).toBe(false);
   await page.evaluate(() => window.closeGoalModal());
 
   // --- …while editing that same goal keeps its own category listed and

@@ -91,11 +91,25 @@ async function bootIntoApp(page) {
   // Polled via evaluate + toPass: waitForFunction needs eval, which the
   // app's CSP (script-src 'self') forbids.
   await expect(async () => {
-    const ready = await page.evaluate(
-      () => !!window._csrfToken && appState.ledger.categories.length > 0,
-    );
+    const ready = await page.evaluate(() => !!window._csrfToken && appState.boot.ready);
     expect(ready).toBeTruthy();
   }).toPass({ timeout: 15000, intervals: [100, 250, 500] });
+}
+
+// Modal overlays slide in (overlay-in / modal-in, var(--dur-slow)). Clicking a
+// control while it is still moving is what Playwright reports as "element is
+// not stable", and for a styled switch the click can land as a no-op. Wait for
+// the real signal — the animations themselves — rather than a fixed sleep.
+// Infinite animations (a spinner) never finish, so they are skipped.
+async function modalSettled(page, overlayId) {
+  await page.evaluate(async (id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const running = el
+      .getAnimations({ subtree: true })
+      .filter((a) => a.effect && a.effect.getTiming().iterations !== Infinity);
+    await Promise.all(running.map((a) => a.finished.catch(() => {})));
+  }, overlayId);
 }
 
 // Drive the app's own navigation directly rather than clicking the nav item:
@@ -158,6 +172,7 @@ function chosenCategoryId(page, ctx) {
 }
 
 module.exports = {
+  modalSettled,
   ADMIN_USER,
   ADMIN_PASS,
   loginViaApi,

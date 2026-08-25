@@ -17,8 +17,10 @@
 // The module.exports guard at the bottom is a no-op in the browser.
 
 const appState = {
-  // Currently displayed period in the transactions view (also seeds the date
-  // of a new booking). currentMonth / currentYear.
+  // Currently displayed period in the transactions view. Also seeds the date
+  // of a new booking (_defaultBookingDate), so adding one while browsing an
+  // earlier month lands it in that month rather than silently in today's.
+  // currentMonth / currentYear.
   view: {
     month: new Date().getMonth(),
     year: new Date().getFullYear(),
@@ -168,6 +170,13 @@ const appState = {
   boot: {
     failed: false,
     retrying: false,
+    // The success twin of `failed`: false while the post-login load chain in
+    // _loadBootData is still running, true once every slice has landed and the
+    // default panel is up. The auth overlay comes down before that chain
+    // finishes, so "the app is visible" and "the app is loaded" are not the
+    // same moment — anything that must not race the remaining loads waits on
+    // this rather than on the first render.
+    ready: false,
   },
 
   // Tag picker modal — only the ledger's bulk add/remove actions still use

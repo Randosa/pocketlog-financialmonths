@@ -1123,6 +1123,29 @@
          the opaque card and exposes a sliver of the red delete action
          behind it during inertial scroll. */
 
+      /* The keyboard path to the row's primary action.
+         The card carries tap, swipe and long-press on one pointer handler, and
+         a tag chip inside it is already a control — so this is a *sibling* of
+         that chip rather than its ancestor (a button must not contain
+         interactive content), and it is transparent to the pointer, which
+         leaves every gesture exactly as it was. Keyboard activation does not
+         hit-test, so Enter and Space still reach it.
+         Inset by the ring's own width: .transaction clips its overflow, so a
+         ring drawn on the card's edge would be cut away entirely. */
+      .tx-open {
+        position: absolute;
+        inset: 3px;
+        pointer-events: none;
+        background: none;
+        border: 0;
+        padding: 0;
+        border-radius: inherit;
+      }
+      .tx-open:focus-visible {
+        outline: none;
+        box-shadow: var(--focus-ring);
+      }
+
       .t-icon {
         width: var(--icon-list-md);
         height: var(--icon-list-md);

@@ -1096,7 +1096,7 @@ function openCatModal(id, opts = {}) {
   renderCatIconPreview();
   document.getElementById('catModalOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
-  setTimeout(() => document.getElementById('catEditName').focus(), 200);
+  focusOnOpen(document.getElementById('catModalOverlay'), 'catEditName', 200);
   trapFocusIn(document.querySelector('#catModalOverlay .modal'), 'cat');
 }
 

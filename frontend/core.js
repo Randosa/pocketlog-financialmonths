@@ -635,7 +635,7 @@ function confirmAction({
     document.body.style.overflow = 'hidden';
     yes.addEventListener('click', () => close(true));
     no.addEventListener('click', () => close(false));
-    setTimeout(() => no.focus(), 50);
+    focusOnOpen(overlay, no, 50);
   });
 }
 
@@ -683,7 +683,10 @@ const PANELS = {
   recurring: { bodyClass: 'on-recurring', render: () => renderRecurringView() },
 };
 
-function showPanel(id) {
+// `opts.keepDrawer` is for the one caller that is not a navigation: boot's own
+// panel restore. Everything else lands here because the user picked a
+// destination, and the drawer they picked it from has to get out of the way.
+function showPanel(id, opts) {
   if (
     appState.nav.searchQuery ||
     appState.nav.categoryFilterId != null ||
@@ -703,7 +706,7 @@ function showPanel(id) {
   });
   const cfg = PANELS[id];
   if (cfg && cfg.render) cfg.render();
-  closeDrawer();
+  if (!opts || !opts.keepDrawer) closeDrawer();
 }
 
 // Called from the "Reports" drawer subpanel. Sets the active report
@@ -793,6 +796,22 @@ function toggleSidebar() {
 // aria-pressed attribute with the class state set by the inline
 // head boot script.
 _syncSidebarTogglePressed(document.documentElement.classList.contains('sidebar-collapsed'));
+// The drawer starts closed, so it starts inert on a phone.
+_syncDrawerInert();
+
+// A closed drawer is only pushed off-screen, not hidden, so its ~70 controls
+// stayed in the tab order: tabbing from the top of the page walked the whole
+// menu at x=-283 before reaching the ledger. `inert` takes the subtree out of
+// focus, hit-testing and the accessibility tree in one attribute.
+//
+// Above the tablet breakpoint the same element is a permanently visible
+// sidebar — there it must stay reachable, which is also why openDrawer and
+// closeDrawer bail out in that mode.
+function _syncDrawerInert() {
+  const drawer = document.getElementById('drawer');
+  if (!drawer) return;
+  drawer.inert = !_mqTablet.matches && !drawer.classList.contains('open');
+}
 
 function openDrawer() {
   if (_mqTablet.matches) return;
@@ -800,7 +819,19 @@ function openDrawer() {
   document.getElementById('drawer').classList.add('open');
   document.getElementById('drawerOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
+  // Before the focus move: an inert subtree refuses focus.
+  _syncDrawerInert();
   trapFocusIn(document.getElementById('drawer'), 'drawer');
+  // The trap only wraps around once focus is already inside — it listens on
+  // the drawer itself. Opening from the hamburger leaves focus on that button,
+  // outside and *after* the drawer in document order, so tabbing went into the
+  // page behind the menu. Move it in, which is what aria-modal promises. The
+  // timeout lets the slide-in start first, matching the modal shells.
+  focusOnOpen(
+    document.getElementById('drawer'),
+    document.querySelector('#drawer .drawer-close-btn'),
+    200,
+  );
 }
 
 function closeDrawer() {
@@ -809,7 +840,10 @@ function closeDrawer() {
   document.getElementById('drawerOverlay').classList.remove('open');
   document.body.style.overflow = '';
   releaseFocusTrap('drawer');
+  // After restoreModalFocus: focus has to leave the subtree before it goes
+  // inert, or the browser drops it to <body>.
   restoreModalFocus('drawer');
+  _syncDrawerInert();
   // _drawerStack and sub-panel data-state are deliberately kept:
   // re-opening the drawer should land back on the last sub-panel
   // the user was on (e.g. Auswertungen), not always reset to the
@@ -820,6 +854,10 @@ function closeDrawer() {
 // overlay is open would leave the body scroll-locked. Reset state
 // when we enter sidebar mode.
 _mqTablet.addEventListener('change', (e) => {
+  // Crossing the breakpoint either way changes whether the drawer is a
+  // sidebar (reachable) or an off-screen menu (inert), so sync first and
+  // leave before the sidebar-mode-only reset below.
+  _syncDrawerInert();
   if (!e.matches) return;
   document.getElementById('drawer').classList.remove('open');
   document.getElementById('drawerOverlay').classList.remove('open');
@@ -941,6 +979,25 @@ function releaseFocusTrap(key) {
   _modalTrapTeardown.delete(key);
 }
 
+// Focus a field once the container it lives in has opened. The delay is for
+// the slide-in — focusing mid-animation makes iOS scroll the field around —
+// but it is also long enough for a fast tap, and an unconditional focus() then
+// lands on the wrong control: the keystrokes the user has already started
+// typing into the field they picked get appended to this one instead. So the
+// claim is dropped as soon as anything inside `root` already has focus.
+//
+// A container that closed again inside the delay needs no check of its own: a
+// modal overlay is display:none by then, the drawer is inert, and a dialog
+// built on the fly is gone from the document — none of them accept focus.
+function focusOnOpen(root, target, delay) {
+  setTimeout(() => {
+    if (!root || !root.isConnected) return;
+    if (root.contains(document.activeElement)) return;
+    const el = typeof target === 'string' ? document.getElementById(target) : target;
+    if (el) el.focus();
+  }, delay);
+}
+
 // Shared open/close tail for the edit modals (goals, budgets, recurring).
 // openModalShell: call AFTER the modal's fields are populated — it records the
 // previously focused element, reveals the overlay, locks body scroll, moves
@@ -954,7 +1011,7 @@ function openModalShell(key, overlayId, focusId) {
   rememberModalFocus(key);
   document.getElementById(overlayId).classList.add('open');
   document.body.style.overflow = 'hidden';
-  setTimeout(() => document.getElementById(focusId).focus(), 200);
+  focusOnOpen(document.getElementById(overlayId), focusId, 200);
   trapFocusIn(document.querySelector('#' + overlayId + ' .modal'), key);
 }
 

@@ -193,21 +193,26 @@ test('category chooser: capped rows, type-aware ranking, and create-on-no-match'
 
   await expectNoRawKeys(page, 'category chooser');
 
-  // The filler tags exist only to contest the ten visible slots. Leaving a
-  // dozen behind on the suite-shared account would silently change what other
-  // specs see, so they go again here.
+  // Every tag this spec made goes again — the fillers that contested the ten
+  // visible slots, and the two it ranked. The account is shared with the other
+  // specs and outlives the run, so a tag left behind is not just clutter: each
+  // rerun adds another used tag competing for those same ten slots, until the
+  // *current* run's tag can no longer make the cut and this test fails on its
+  // own history. (The bookings stay; deleting a tag only detaches it.)
   await page.evaluate(
-    async ([spendTag]) => {
-      for (let i = 0; i < 10; i++) {
+    async ([spendTag, earnTag]) => {
+      const names = [earnTag, spendTag];
+      for (let i = 0; i < 10; i++) names.push(spendTag + 'F' + i);
+      for (const name of names) {
         try {
-          await api('DELETE', `/tags/${encodeURIComponent(spendTag + 'F' + i)}`);
+          await api('DELETE', `/tags/${encodeURIComponent(name)}`);
         } catch (e) {
           /* already gone */
         }
       }
       await loadTags();
     },
-    [SPEND_TAG],
+    [SPEND_TAG, EARN_TAG],
   );
 
   await page.evaluate(() => window.closeModal({ force: true }));

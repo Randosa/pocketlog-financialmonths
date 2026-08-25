@@ -8,7 +8,8 @@ function openModal(tx) {
   document.getElementById('inputAmount').value =
     tx?.amount != null ? _formatAmountInput(Number(tx.amount)) : '';
   document.getElementById('inputDesc').value = tx?.desc || '';
-  document.getElementById('inputDate').value = tx?.date || new Date().toISOString().split('T')[0];
+  document.getElementById('inputDate').value =
+    tx?.date || _defaultBookingDate(appState.view.year, appState.view.month, new Date());
   // Before setType: it re-ranks both choosers, and the category chooser has
   // to know the current selection before it decides what to put first.
   resetCatChooser('transaction', tx ? tx.category_id : null);
@@ -29,7 +30,7 @@ function openModal(tx) {
   remeasureCatChooser('transaction');
   appState.nav.bookingModalOpenedAt = Date.now();
   document.body.style.overflow = 'hidden';
-  setTimeout(() => document.getElementById('inputAmount').focus(), 300);
+  focusOnOpen(document.getElementById('modalOverlay'), 'inputAmount', 300);
   document.getElementById('modalOverlay').dataset.editId = tx?.id || '';
   // Baseline for the unsaved-changes check in closeModal.
   appState.form.pristine = _bookingFormSnapshot();
