@@ -186,6 +186,7 @@ async function renderRecurringView() {
 function populateRecurringCategorySelect(selectedId) {
   resetCatChooser('recurring', selectedId);
   remeasureCatChooser('recurring');
+  remeasureTagChooser('recurring');
 }
 
 // Validity is a single choice (unlimited / date / count). Toggling

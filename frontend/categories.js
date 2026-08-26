@@ -74,10 +74,25 @@ const TAG_CHOOSERS = {
 
 // Chips shown with an empty field, and the cap once a query narrows things
 // down — enough to be useful, few enough to scan without scrolling the modal.
-const TAG_CHOOSER_TOP = 10;
-const TAG_CHOOSER_HITS = 15;
+const TAG_CHOOSER_ROWS = 3; // chip rows shown with an empty field
+const TAG_CHOOSER_HITS = 15; // cap while a query narrows things down
+// Upper bound on what the row cap gets to choose from. The cap itself is the
+// real limit; this only keeps the measured render from ever being huge.
+const TAG_CHOOSER_POOL = 24;
 
 const _byTagName = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' });
+
+// How many of the chips currently in `row` sit within its first `rows` lines.
+// Chip widths follow the names, so a fixed *count* packs into anything from
+// one line to five — which is why both choosers cap by the space they take
+// rather than by a number.
+function _chipsWithinRows(row, rows) {
+  const chips = [...row.children];
+  if (!chips.length) return 0;
+  const tops = [...new Set(chips.map((c) => c.offsetTop))].sort((a, b) => a - b);
+  const allowed = new Set(tops.slice(0, rows));
+  return chips.filter((c) => allowed.has(c.offsetTop)).length;
+}
 
 // Decide which chips the row shows, and freeze that order into the view
 // state. Called when a form opens and whenever the query changes — never on
@@ -111,10 +126,42 @@ function _rebuildTagChooser(ctx) {
         // crud/tags.py), overall use as the tie-break, then by name.
         _compareUsage(_tagUse(a), _tagUse(b), type) || _byTagName(a, b),
     )
-    .slice(0, TAG_CHOOSER_TOP)
-    .sort(_byTagName);
-  view.shown = [...chosen.slice().sort(_byTagName), ...rest];
-  view.overflow = 0;
+    .slice(0, TAG_CHOOSER_POOL);
+  // `ranked` is what the row cap cuts from — least-used first out. `shown` is
+  // what gets painted, and it stays frozen between rebuilds so a toggle
+  // recolours a chip where it stands instead of moving it.
+  view.ranked = [...chosen, ...rest];
+  view.shown = _tagDisplayOrder(chosen, view.ranked);
+  view.overflow = 0; // decided by the row cap, after layout
+}
+
+// Position follows the alphabet, membership follows the ranking: a chip does
+// not move when usage shifts or the form's type flips. Tags already attached
+// to the record keep their own group at the front — they are its state, not a
+// suggestion, and the row is the only place they can be taken off again.
+function _tagDisplayOrder(chosen, list) {
+  const selected = new Set(chosen.map((x) => x.toLowerCase()));
+  const on = list.filter((t) => selected.has(t.toLowerCase())).sort(_byTagName);
+  const off = list.filter((t) => !selected.has(t.toLowerCase())).sort(_byTagName);
+  return [...on, ...off];
+}
+
+// Rebuild, paint, then cap — the three steps that together decide what the
+// row shows. Kept as one call because the cap re-derives the display order,
+// so it must run only where a rebuild already reordered the row. A plain
+// renderTagChooser (a toggle, the limit hint) must leave the order alone.
+// Search results skip the cap: they carry their own count cap and the user
+// asked for exactly them.
+function _refreshTagChooser(ctx) {
+  _rebuildTagChooser(ctx);
+  renderTagChooser(ctx);
+  if (!appState.tagChooser[ctx].query.trim()) _capTagChooserRows(ctx);
+}
+
+function _tagChipMarkup(ctx, t, chosen) {
+  const on = chosen.some((x) => x.toLowerCase() === t.toLowerCase());
+  const label = on ? 'tags.removeAria' : 'tags.addSuggestionAria';
+  return `<button type="button" class="tag-suggestion${on ? ' is-added' : ''}" data-chooser-tag="${_escAttr(t)}" aria-pressed="${on}" aria-label="${_escAttr(tr(label, { name: t }))}">${_escText(t)}</button>`;
 }
 
 function renderTagChooser(ctx) {
@@ -135,11 +182,7 @@ function renderTagChooser(ctx) {
     ? [...box.children].indexOf(document.activeElement)
     : -1;
 
-  const chips = view.shown.map((t) => {
-    const on = selected.has(t.toLowerCase());
-    const label = on ? 'tags.removeAria' : 'tags.addSuggestionAria';
-    return `<button type="button" class="tag-suggestion${on ? ' is-added' : ''}" data-chooser-tag="${_escAttr(t)}" aria-pressed="${on}" aria-label="${_escAttr(tr(label, { name: t }))}">${_escText(t)}</button>`;
-  });
+  const chips = view.shown.map((t) => _tagChipMarkup(ctx, t, chosen));
   // Offer to make the typed text a tag, so the name is typed once rather than
   // again in a separate create field. It goes last: with matches on screen the
   // likely intent is one of them, and creating "Auto" must stay possible even
@@ -150,12 +193,7 @@ function renderTagChooser(ctx) {
     );
   }
   box.innerHTML = chips.join('');
-  box.querySelectorAll('[data-chooser-tag]').forEach((el) => {
-    el.addEventListener('click', () => toggleTagChooser(ctx, el.dataset.chooserTag));
-  });
-  box.querySelectorAll('[data-chooser-create]').forEach((el) => {
-    el.addEventListener('click', () => createTagFromChooser(ctx, el.dataset.chooserCreate));
-  });
+  _wireTagChips(ctx, box);
   if (focused >= 0) box.children[focused]?.focus();
 
   const hint = document.getElementById(chooser.hint);
@@ -169,6 +207,53 @@ function renderTagChooser(ctx) {
         : '';
   hint.textContent = message;
   hint.hidden = !message;
+}
+
+function _wireTagChips(ctx, box) {
+  box.querySelectorAll('[data-chooser-tag]').forEach((el) => {
+    el.addEventListener('click', () => toggleTagChooser(ctx, el.dataset.chooserTag));
+  });
+  box.querySelectorAll('[data-chooser-create]').forEach((el) => {
+    el.addEventListener('click', () => createTagFromChooser(ctx, el.dataset.chooserCreate));
+  });
+}
+
+// Trim the row to TAG_CHOOSER_ROWS. The cut follows the ranking (least-used
+// out first) while the row shows the survivors alphabetically, so the two
+// orders need two passes: line packing is greedy, and the same chips in
+// alphabetical order can wrap one line further than the layout the cut was
+// measured on.
+//
+// Tags already attached to the record are never cut — the row is the only
+// place they appear, so cutting one would take away the way to remove it. A
+// heavily tagged record is therefore allowed to overrun the cap.
+function _capTagChooserRows(ctx) {
+  const box = document.getElementById(TAG_CHOOSERS[ctx].row);
+  const view = appState.tagChooser[ctx];
+  if (!box || box.offsetParent === null || !view.ranked || !view.ranked.length) return;
+  const chosen = TAG_CHOOSERS[ctx].read();
+  const floor = Math.max(1, chosen.length);
+  let keep = Math.max(floor, _chipsWithinRows(box, TAG_CHOOSER_ROWS));
+  for (;;) {
+    view.shown = _tagDisplayOrder(chosen, view.ranked.slice(0, keep));
+    if (keep >= view.ranked.length && keep === _chipsWithinRows(box, TAG_CHOOSER_ROWS)) return;
+    box.innerHTML = view.shown.map((t) => _tagChipMarkup(ctx, t, chosen)).join('');
+    _wireTagChips(ctx, box);
+    if (keep <= floor || _chipsWithinRows(box, TAG_CHOOSER_ROWS) === view.shown.length) return;
+    keep -= 1;
+  }
+}
+
+// Re-measure a tag row once its modal is actually on screen — the booking and
+// recurring forms fill their choosers before the modal is shown, and an
+// unlaid-out row cannot be measured. Mirrors remeasureCatChooser.
+function remeasureTagChooser(ctx) {
+  if (!appState.tagChooser[ctx] || appState.tagChooser[ctx].query.trim()) return;
+  requestAnimationFrame(() => {
+    const view = appState.tagChooser[ctx];
+    if (view.query.trim()) return;
+    _refreshTagChooser(ctx);
+  });
 }
 
 // Chips toggle: the row is the only place a tag appears, so it has to be able
@@ -190,8 +275,7 @@ function toggleTagChooser(ctx, name) {
 
 function filterTagChooser(ctx, value) {
   appState.tagChooser[ctx].query = value || '';
-  _rebuildTagChooser(ctx);
-  renderTagChooser(ctx);
+  _refreshTagChooser(ctx);
   // On a phone the keyboard covers the row the moment the field takes focus.
   document.getElementById(TAG_CHOOSERS[ctx].row)?.scrollIntoView({ block: 'nearest' });
 }
@@ -241,8 +325,7 @@ function _clearTagChooserQuery(ctx) {
   appState.tagChooser[ctx].query = '';
   const input = document.getElementById(TAG_CHOOSERS[ctx].input);
   if (input) input.value = '';
-  _rebuildTagChooser(ctx);
-  renderTagChooser(ctx);
+  _refreshTagChooser(ctx);
 }
 
 // Called when a form opens: clear the query and recompute from scratch.
@@ -250,8 +333,7 @@ function resetTagChooser(ctx) {
   appState.tagChooser[ctx] = { query: '', shown: [], overflow: 0 };
   const input = document.getElementById(TAG_CHOOSERS[ctx].input);
   if (input) input.value = '';
-  _rebuildTagChooser(ctx);
-  renderTagChooser(ctx);
+  _refreshTagChooser(ctx);
 }
 
 // ── TAG PICKER MODAL ──────────────────────────────────────────────────────────
@@ -274,7 +356,11 @@ function resetTagChooser(ctx) {
 //
 // Ranking is most-used-first for the form's current type (see _compareUsage in
 // utils.js), which is why switching expense/income reshuffles the chips.
-const CAT_CHOOSER_ROWS = 2; // chip rows shown with an empty field
+// Three rows, matching the tag row below it. On a 20-category account that is
+// nine categories in reach instead of six; the cost is the notes field, which
+// drops below the fold of the scrolling modal body on a mid-size phone. The
+// category is mandatory and the note is not, so the trade goes this way.
+const CAT_CHOOSER_ROWS = 3;
 const CAT_CHOOSER_HITS = 12; // cap while a query narrows things down
 // Used until the row has been laid out and can be measured — deliberately
 // small so a modal never flashes every category before the cap lands.
@@ -390,9 +476,14 @@ function _rebuildCatChooser(ctx) {
   view.overflow = 0; // decided by the row cap, after layout
 }
 
+// No icon here, deliberately. Category names run long ("Gesundheit &
+// Hygiene"), and with the glyph only two chips fit a line on a phone — the
+// 20px square plus its gap costs more width than a whole extra chip is worth.
+// The icon still carries the category everywhere it has room to: the ledger
+// rows, the reports, and the category list itself.
 function _catChipMarkup(ctx, c) {
   const on = c.id === appState.catChooser[ctx].selectedId;
-  return `<button type="button" class="cat-suggestion${on ? ' is-chosen' : ''}" data-cat-choice="${c.id}" aria-pressed="${on}" style="--cat-color:${_escAttr(c.color || '#9e9b96')}" aria-label="${_escAttr(tr('categories.chooseAria', { name: c.name }))}"><span class="cat-suggestion-glyph" aria-hidden="true">${catIconSvg(c.icon)}</span>${_escText(c.name)}</button>`;
+  return `<button type="button" class="cat-suggestion${on ? ' is-chosen' : ''}" data-cat-choice="${c.id}" aria-pressed="${on}" aria-label="${_escAttr(tr('categories.chooseAria', { name: c.name }))}">${_escText(c.name)}</button>`;
 }
 
 function renderCatChooser(ctx) {
@@ -429,32 +520,34 @@ function renderCatChooser(ctx) {
   _renderCatChooserHint(ctx);
 }
 
-// Trim the row to CAT_CHOOSER_ROWS by measuring where each chip landed.
+// Trim the row to CAT_CHOOSER_ROWS and show what survives alphabetically.
+//
+// The two orders do different jobs and cannot be applied in one pass.
+// Ranking decides *which* categories you see: the most-used for this form's
+// type, with the selected one first in `view.shown` so it always survives
+// even when it is not a frequent one. The alphabet decides *where* they sit,
+// so a chip does not move when usage shifts or the type flips — the same
+// split the tag row uses. Line packing is greedy, though, so the same chips
+// in alphabetical order can wrap one line further than the ranked layout the
+// cut was measured on; re-check what is actually shown and shrink until it
+// fits.
+//
 // While the row is not laid out (a form fills its chooser before its modal is
 // shown) fall back to a small blind cap and let the caller re-run this once
-// the modal is up — the frozen order makes that idempotent.
+// the modal is up. Callers wire the chips afterwards, so this only paints.
 function _capCatChooserRows(ctx) {
   const row = document.getElementById(CAT_CHOOSERS[ctx].row);
   const view = appState.catChooser[ctx];
-  if (!row) return;
-  const chips = [...row.children];
-  if (!chips.length) return;
-  let keep;
-  if (row.offsetParent === null) {
-    keep = Math.min(CAT_CHOOSER_BLIND_CAP, chips.length);
-  } else {
-    const tops = [...new Set(chips.map((c) => c.offsetTop))].sort((a, b) => a - b);
-    const allowed = new Set(tops.slice(0, CAT_CHOOSER_ROWS));
-    keep = chips.filter((c) => allowed.has(c.offsetTop)).length;
-  }
-  if (keep < chips.length) {
-    row.innerHTML = view.shown
-      .slice(0, keep)
-      .map((c) => _catChipMarkup(ctx, c))
-      .join('');
-    row.querySelectorAll('[data-cat-choice]').forEach((el) => {
-      el.addEventListener('click', () => selectCatChooser(ctx, Number(el.dataset.catChoice)));
-    });
+  if (!row || !view.shown.length) return;
+  const blind = row.offsetParent === null;
+  let keep = blind
+    ? Math.min(CAT_CHOOSER_BLIND_CAP, view.shown.length)
+    : _chipsWithinRows(row, CAT_CHOOSER_ROWS);
+  for (;;) {
+    const shown = view.shown.slice(0, keep).sort(_byCatName);
+    row.innerHTML = shown.map((c) => _catChipMarkup(ctx, c)).join('');
+    if (blind || keep <= 1 || _chipsWithinRows(row, CAT_CHOOSER_ROWS) === shown.length) return;
+    keep -= 1;
   }
 }
 
@@ -591,8 +684,7 @@ function rerankChoosersForType(ctx) {
     remeasureCatChooser(ctx);
   }
   if (appState.tagChooser[ctx]) {
-    _rebuildTagChooser(ctx);
-    renderTagChooser(ctx);
+    _refreshTagChooser(ctx);
   }
 }
 

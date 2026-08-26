@@ -110,12 +110,15 @@ test('category chooser: capped rows, type-aware ranking, and create-on-no-match'
   await page.click('.fab');
   await expect(page.locator('#modalOverlay')).toHaveClass(/open/);
 
-  // --- 1. Two rows, and the rest is reached through the field rather than
+  // --- 1. A capped row, and the rest is reached through the field rather than
   //        announced: at rest the row is a shortlist on purpose, so it says
-  //        nothing about what it leaves out. ---
+  //        nothing about what it leaves out. The cap is read from the app so
+  //        this does not have to be edited whenever it is retuned; what is
+  //        pinned is that the row *is* capped, not the number. ---
+  const catRows = await page.evaluate(() => CAT_CHOOSER_ROWS);
   await expect
-    .poll(() => chipRowCount(page), { message: 'chip row capped to two rows' })
-    .toBeLessThanOrEqual(2);
+    .poll(() => chipRowCount(page), { message: `chip row capped to ${catRows} rows` })
+    .toBeLessThanOrEqual(catRows);
   const shown = await catChipLabels(page, 'transaction');
   const total = await page.evaluate(() => appState.ledger.categories.length);
   expect(shown.length).toBeLessThan(total);
@@ -268,6 +271,169 @@ test('category chooser: a name nobody has opens the category modal and comes bac
       }, FRESH),
     )
     .toBe(true);
+
+  expect(pageErrors, `Uncaught page errors: ${pageErrors.join(' | ')}`).toEqual([]);
+});
+
+// Ranking and the alphabet do different jobs: usage decides *which* chips a
+// capped row shows, the alphabet decides *where* they sit. Position stability
+// is the point — a chip must not move because your spending shifted or you
+// flipped the form's type — so the visible order carries no ranking
+// information and the two properties have to be asserted separately.
+//
+// Both are asserted as invariants rather than against named categories: the
+// suite account is shared and outlives the run, so "my category is on the row"
+// would pass or fail on what earlier runs left behind.
+test('chooser rows: usage picks the chips, the alphabet places them', async ({ page }) => {
+  const pageErrors = [];
+  page.on('pageerror', (e) => pageErrors.push(e.message));
+
+  await loginViaApi(page.context());
+  await bootIntoApp(page);
+
+  // Categories whose names sort *after* everything the account already has,
+  // booked heavily, so "most-used" and "alphabetically first" point in
+  // opposite directions. Without them a tie-broken-by-name ranking would look
+  // alphabetical on its own and prove nothing.
+  // Short names (a long one takes a whole line, and a two-chip row cannot show
+  // a disagreement), and usage runs *against* the alphabet: C is booked most,
+  // A least. Ranked order is therefore C, B, A and alphabetical order A, B, C,
+  // so even the shortest row the cap can produce tells them apart.
+  const HOT = [`Zz${RUN % 1000000}A`, `Zz${RUN % 1000000}B`, `Zz${RUN % 1000000}C`];
+  // The tag row needs chips of its own to prove anything about its order, and
+  // a fresh instance has none yet. These ride along on the same bookings.
+  const HOT_TAGS = [`Zt${RUN % 1000000}A`, `Zt${RUN % 1000000}B`, `Zt${RUN % 1000000}C`];
+  const seeded = await page.evaluate(
+    async ([names, tags]) => {
+      const today = new Date().toISOString().slice(0, 10);
+      const made = { cats: [], txs: [], tags };
+      // Out-book whatever the shared account already carries, so these three are
+      // certain to be on the row. Without that the test could not tell the two
+      // orders apart and would pass for the wrong reason.
+      const top = Math.max(0, ...appState.ledger.categories.map((c) => Number(c.count_out) || 0));
+      for (let i = 0; i < names.length; i++) {
+        const cat = await api('POST', '/categories', {
+          name: names[i],
+          icon: 'package',
+          color: '#9e9b96',
+        });
+        made.cats.push(cat.id);
+        for (let n = 0; n < top + 1 + i; n++) {
+          const tx = await api('POST', '/transactions', {
+            amount: '1.00',
+            desc: 'rank seed',
+            category_id: cat.id,
+            date: today,
+            type: 'out',
+            tags: [tags[n % tags.length]],
+          });
+          made.txs.push(tx.id);
+        }
+      }
+      await loadCategories();
+      await loadTags();
+      await loadAndRender();
+      return made;
+    },
+    [HOT, HOT_TAGS],
+  );
+
+  // The cleanup runs even when an assertion fails: these categories are the
+  // most-used ones on the shared account while they exist, so leaving them
+  // behind would decide what every later spec sees on the chooser row — a
+  // failure here used to take an unrelated spec down with it.
+  try {
+    await page.click('.fab');
+    await expect(page.locator('#modalOverlay')).toHaveClass(/open/);
+    await expect(page.locator('#catSuggestions .cat-suggestion').first()).toBeVisible();
+
+    const shown = await catChipLabels(page, 'transaction');
+    // appState keeps the ranked pool; the row shows the survivors of the cap.
+    const ranked = await page.evaluate(() =>
+      appState.catChooser.transaction.shown.map((c) => c.name),
+    );
+    const survivors = ranked.slice(0, shown.length);
+
+    const byName = [...shown].sort((a, b) => a.localeCompare(b, 'de', { sensitivity: 'base' }));
+    expect(shown, 'the row reads alphabetically').toEqual(byName);
+    expect(new Set(shown), 'and holds exactly the top-ranked ones').toEqual(new Set(survivors));
+    // The seed put the three most-used categories at the end of the alphabet, so
+    // the two orders must disagree here. If they ever coincide the two
+    // assertions above are both satisfied by the same list and prove nothing —
+    // fail loudly rather than pass on a coincidence.
+    expect(survivors, 'ranked and alphabetical order genuinely differ').not.toEqual(shown);
+    for (const name of HOT) {
+      expect(shown, `${name} was booked past everything else, so the cut keeps it`).toContain(name);
+    }
+
+    // The chips carry the name only — the icon square cost more width than an
+    // extra chip was worth, and with it gone a long name still leaves room.
+    expect(
+      await page.evaluate(() => document.querySelectorAll('#catSuggestions .cat-glyph').length),
+      'no icon in a chooser chip',
+    ).toBe(0);
+
+    // Tags follow the same split, and their row is capped by the space it takes
+    // rather than by a count: ten chips is two lines of short tags and five of
+    // long ones, so a single long tag name used to shove the rest of the form
+    // down the page.
+    const tagLines = await page.evaluate(() => {
+      const chips = [...document.querySelectorAll('#tagSuggestions .tag-suggestion')];
+      return new Set(chips.map((c) => c.offsetTop)).size;
+    });
+    expect(tagLines, 'the tag row keeps to its cap').toBeLessThanOrEqual(3);
+    const tags = await tagChips(page);
+    expect(tags, 'and reads alphabetically too').toEqual(
+      [...tags].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })),
+    );
+
+    // Marking a tag recolours it where it stands. It must not jump into the
+    // "attached" group under the finger — the next tap would land on a
+    // different tag.
+    const chipText = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll('#tagSuggestions .tag-suggestion')].map((c) =>
+          c.textContent.trim(),
+        ),
+      );
+    const before = await chipText();
+    expect(before.length, 'the seeded tags reach the row').toBeGreaterThanOrEqual(3);
+    await page.locator('#tagSuggestions .tag-suggestion').nth(2).click();
+    expect(await chipText(), 'marking a tag leaves the row order alone').toEqual(before);
+    await expect(page.locator('#tagSuggestions .tag-suggestion').nth(2)).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    await page.evaluate(() => window.closeModal({ force: true }));
+  } finally {
+    await page.evaluate(async (made) => {
+      for (const id of made.txs) {
+        try {
+          await api('DELETE', `/transactions/${id}`);
+        } catch (e) {
+          /* already gone */
+        }
+      }
+      for (const id of made.cats) {
+        try {
+          await api('DELETE', `/categories/${id}`);
+        } catch (e) {
+          /* still referenced */
+        }
+      }
+      for (const name of made.tags) {
+        try {
+          await api('DELETE', `/tags/${encodeURIComponent(name)}`);
+        } catch (e) {
+          /* already gone */
+        }
+      }
+      await loadCategories();
+      await loadTags();
+      await loadAndRender();
+    }, seeded);
+  }
 
   expect(pageErrors, `Uncaught page errors: ${pageErrors.join(' | ')}`).toEqual([]);
 });
