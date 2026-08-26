@@ -356,7 +356,11 @@ function resetTagChooser(ctx) {
 //
 // Ranking is most-used-first for the form's current type (see _compareUsage in
 // utils.js), which is why switching expense/income reshuffles the chips.
-const CAT_CHOOSER_ROWS = 2; // chip rows shown with an empty field
+// Three rows, matching the tag row below it. On a 20-category account that is
+// nine categories in reach instead of six; the cost is the notes field, which
+// drops below the fold of the scrolling modal body on a mid-size phone. The
+// category is mandatory and the note is not, so the trade goes this way.
+const CAT_CHOOSER_ROWS = 3;
 const CAT_CHOOSER_HITS = 12; // cap while a query narrows things down
 // Used until the row has been laid out and can be measured — deliberately
 // small so a modal never flashes every category before the cap lands.
