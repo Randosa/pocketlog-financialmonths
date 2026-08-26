@@ -155,7 +155,6 @@
         --icon-list-sm: 38px; /* .cat-icon (category-breakdown icon) */
         --swipe-action-w: 92px; /* .tx-action reveal width on swipe-to-delete */
         --icon-select: 24px; /* .tx-select-check multi-select indicator circle */
-        --icon-chip: 20px; /* .cat-suggestion-glyph (category chip icon square) */
         --cat-bar-h: 5px; /* .cat-bar progress-bar height */
         --bottom-bar-clearance: 66px; /* space content panels reserve under the floating bottom bar */
 
@@ -2510,28 +2509,13 @@
         outline: none;
         box-shadow: var(--focus-ring);
       }
-      /* A category chip carries its own icon and colour — the language the
-         ledger rows and the reports already speak. The tinted square is the
-         same object as .t-icon on a booking row, at chip scale. */
+      /* Label only — no icon square. Category names run long, and on a phone
+         the glyph plus its gap cost more width than an extra chip is worth.
+         The icon still speaks for the category on the ledger rows, in the
+         reports and in the category list, where there is room for it. */
       .cat-suggestion {
         display: inline-flex;
         align-items: center;
-        gap: var(--space-8);
-      }
-      .cat-suggestion-glyph {
-        width: var(--icon-chip);
-        height: var(--icon-chip);
-        border-radius: var(--r-xs);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex: 0 0 auto;
-        background: color-mix(in oklab, var(--cat-color) 18%, transparent);
-        color: var(--cat-color);
-      }
-      .cat-suggestion-glyph .cat-glyph {
-        width: 70%;
-        height: 70%;
       }
       /* Attached to the form / staged in the picker / active in the trend
          report: one state, one look. The accent reads at a glance where a

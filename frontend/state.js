@@ -51,9 +51,12 @@ const appState = {
   // `shown` is the list currently rendered, and it is deliberately frozen
   // between query changes: toggling a chip recolours it in place instead of
   // reordering the row under the user's finger mid-tap.
+  // `ranked` is the pool the row cap cuts from, least-used out first; `shown`
+  // is the frozen display order that gets painted (alphabetical, with tags
+  // already on the record grouped in front).
   tagChooser: {
-    transaction: { query: '', shown: [], overflow: 0 },
-    recurring: { query: '', shown: [], overflow: 0 },
+    transaction: { query: '', shown: [], ranked: [], overflow: 0 },
+    recurring: { query: '', shown: [], ranked: [], overflow: 0 },
   },
 
   // Category chooser — the same idiom as the tag chooser, but single-select

@@ -28,6 +28,7 @@ function openModal(tx) {
   document.getElementById('deleteBtn').style.display = tx ? 'block' : 'none';
   document.getElementById('modalOverlay').classList.add('open');
   remeasureCatChooser('transaction');
+  remeasureTagChooser('transaction');
   appState.nav.bookingModalOpenedAt = Date.now();
   document.body.style.overflow = 'hidden';
   focusOnOpen(document.getElementById('modalOverlay'), 'inputAmount', 300);
