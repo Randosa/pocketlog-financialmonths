@@ -184,8 +184,9 @@ async function renderRecurringView() {
 }
 
 function populateRecurringCategorySelect(selectedId) {
-  const sel = document.getElementById('recEditCategory');
-  if (sel) _populateCategorySelect(sel, selectedId);
+  resetCatChooser('recurring', selectedId);
+  remeasureCatChooser('recurring');
+  remeasureTagChooser('recurring');
 }
 
 // Validity is a single choice (unlimited / date / count). Toggling
@@ -276,6 +277,13 @@ function _updateRecurringStatusHint(rule) {
   }
 }
 
+// The rule's type is what its two choosers rank against, so switching it
+// reshuffles both chip rows — the same behaviour the booking form's
+// expense/income toggle has.
+function onRecurringTypeChange() {
+  rerankChoosersForType('recurring');
+}
+
 function openRecurringModal(id) {
   if (!appState.ledger.categories.length) {
     toast(tr('recurring.needCategory'), 'error');
@@ -306,8 +314,8 @@ function openRecurringModal(id) {
     // on the next save.
     setRecurringValidity(r.max_occurrences != null ? 'count' : r.end_date ? 'date' : 'unlimited');
     document.getElementById('recEditActive').checked = r.active !== false;
-    appState.tagPicker.recurringTags = r.tags ? [...r.tags] : [];
-    renderRecurringTagPills();
+    appState.recurring.tags = r.tags ? [...r.tags] : [];
+    resetTagChooser('recurring');
     title.textContent = tr('recurring.editTitle');
     deleteBtn.style.display = '';
     skipsGroup.hidden = false;
@@ -331,8 +339,8 @@ function openRecurringModal(id) {
     document.getElementById('recEditMaxOccurrences').value = '';
     setRecurringValidity('unlimited');
     document.getElementById('recEditActive').checked = true;
-    appState.tagPicker.recurringTags = [];
-    renderRecurringTagPills();
+    appState.recurring.tags = [];
+    resetTagChooser('recurring');
     _refreshRecurringPreview();
     title.textContent = tr('recurring.newTitle');
     deleteBtn.style.display = 'none';
@@ -350,7 +358,7 @@ function _recurringPayloadFromForm() {
   const name = document.getElementById('recEditName').value.trim();
   const type = document.getElementById('recEditType').value;
   const amount = parseAmount(document.getElementById('recEditAmount').value);
-  const categoryId = parseInt(document.getElementById('recEditCategory').value, 10);
+  const categoryId = catChooserValue('recurring');
   const description = document.getElementById('recEditDescription').value.trim();
   const frequency = document.getElementById('recEditFrequency').value;
   const interval = Math.max(1, parseInt(document.getElementById('recEditInterval').value, 10) || 1);
@@ -430,7 +438,7 @@ async function saveRecurringEdit() {
     amount: f.amount.toFixed(2),
     category_id: f.categoryId,
     desc: f.description,
-    tags: appState.tagPicker.recurringTags,
+    tags: appState.recurring.tags,
     frequency: f.frequency,
     interval: f.interval,
     weekday: f.weekday,

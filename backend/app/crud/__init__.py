@@ -37,12 +37,14 @@ from .budgets import (
     update_budget,
 )
 from .categories import (
+    CATEGORY_COUNT_WINDOW_DAYS,
     _owned_category_exists,
     _seed_default_categories,
     create_category,
     delete_category,
     get_or_create_category,
     list_categories,
+    list_categories_with_usage,
     update_category,
 )
 from .defaults import (
@@ -86,6 +88,7 @@ from .settings import (
     update_settings,
 )
 from .tags import (
+    TAG_COUNT_WINDOW_DAYS,
     _build_tag_cache,
     _find_tag_by_name,
     _resolve_tags,
@@ -152,7 +155,9 @@ __all__ = [
     "create_category",
     "delete_category",
     "get_or_create_category",
+    "CATEGORY_COUNT_WINDOW_DAYS",
     "list_categories",
+    "list_categories_with_usage",
     "update_category",
     # goals
     "create_goal",
@@ -165,6 +170,7 @@ __all__ = [
     "list_budgets",
     "update_budget",
     # tags
+    "TAG_COUNT_WINDOW_DAYS",
     "_build_tag_cache",
     "_find_tag_by_name",
     "_resolve_tags",

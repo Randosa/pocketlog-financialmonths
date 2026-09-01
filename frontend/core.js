@@ -220,7 +220,16 @@ function invalidateReportCache() {
 // current view's slice, loaded per API), categories (loaded per API),
 // appState.ledger.availableTags (the user's distinct tags, alphabetical) and `all` (the full
 // pool used by search). `appState.ledger.all` below maps to appState.ledger.all.
-const tagCounts = new Map(); // tag name (case-folded) → number of uses
+// tag name (case-folded) → {all, in, out} uses inside the backend's 90-day
+// window. The per-type split is what lets the chooser rank its chips against
+// the form's current type (see _compareUsage in utils.js).
+const tagCounts = new Map();
+
+// Usage record for a tag, zeroed when the tag is unknown — every caller reads
+// all three fields, so no call site has to guard.
+function _tagUse(name) {
+  return tagCounts.get(String(name || '').toLowerCase()) || { all: 0, in: 0, out: 0 };
+}
 
 // ── API HELPER ────────────────────────────────────────────────────────────────
 // Same-origin cookie session. The CSRF token is collected on login /
@@ -626,7 +635,7 @@ function confirmAction({
     document.body.style.overflow = 'hidden';
     yes.addEventListener('click', () => close(true));
     no.addEventListener('click', () => close(false));
-    setTimeout(() => no.focus(), 50);
+    focusOnOpen(overlay, no, 50);
   });
 }
 
@@ -674,7 +683,10 @@ const PANELS = {
   recurring: { bodyClass: 'on-recurring', render: () => renderRecurringView() },
 };
 
-function showPanel(id) {
+// `opts.keepDrawer` is for the one caller that is not a navigation: boot's own
+// panel restore. Everything else lands here because the user picked a
+// destination, and the drawer they picked it from has to get out of the way.
+function showPanel(id, opts) {
   if (
     appState.nav.searchQuery ||
     appState.nav.categoryFilterId != null ||
@@ -694,7 +706,7 @@ function showPanel(id) {
   });
   const cfg = PANELS[id];
   if (cfg && cfg.render) cfg.render();
-  closeDrawer();
+  if (!opts || !opts.keepDrawer) closeDrawer();
 }
 
 // Called from the "Reports" drawer subpanel. Sets the active report
@@ -784,6 +796,22 @@ function toggleSidebar() {
 // aria-pressed attribute with the class state set by the inline
 // head boot script.
 _syncSidebarTogglePressed(document.documentElement.classList.contains('sidebar-collapsed'));
+// The drawer starts closed, so it starts inert on a phone.
+_syncDrawerInert();
+
+// A closed drawer is only pushed off-screen, not hidden, so its ~70 controls
+// stayed in the tab order: tabbing from the top of the page walked the whole
+// menu at x=-283 before reaching the ledger. `inert` takes the subtree out of
+// focus, hit-testing and the accessibility tree in one attribute.
+//
+// Above the tablet breakpoint the same element is a permanently visible
+// sidebar — there it must stay reachable, which is also why openDrawer and
+// closeDrawer bail out in that mode.
+function _syncDrawerInert() {
+  const drawer = document.getElementById('drawer');
+  if (!drawer) return;
+  drawer.inert = !_mqTablet.matches && !drawer.classList.contains('open');
+}
 
 function openDrawer() {
   if (_mqTablet.matches) return;
@@ -791,7 +819,19 @@ function openDrawer() {
   document.getElementById('drawer').classList.add('open');
   document.getElementById('drawerOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
+  // Before the focus move: an inert subtree refuses focus.
+  _syncDrawerInert();
   trapFocusIn(document.getElementById('drawer'), 'drawer');
+  // The trap only wraps around once focus is already inside — it listens on
+  // the drawer itself. Opening from the hamburger leaves focus on that button,
+  // outside and *after* the drawer in document order, so tabbing went into the
+  // page behind the menu. Move it in, which is what aria-modal promises. The
+  // timeout lets the slide-in start first, matching the modal shells.
+  focusOnOpen(
+    document.getElementById('drawer'),
+    document.querySelector('#drawer .drawer-close-btn'),
+    200,
+  );
 }
 
 function closeDrawer() {
@@ -800,7 +840,10 @@ function closeDrawer() {
   document.getElementById('drawerOverlay').classList.remove('open');
   document.body.style.overflow = '';
   releaseFocusTrap('drawer');
+  // After restoreModalFocus: focus has to leave the subtree before it goes
+  // inert, or the browser drops it to <body>.
   restoreModalFocus('drawer');
+  _syncDrawerInert();
   // _drawerStack and sub-panel data-state are deliberately kept:
   // re-opening the drawer should land back on the last sub-panel
   // the user was on (e.g. Auswertungen), not always reset to the
@@ -811,6 +854,10 @@ function closeDrawer() {
 // overlay is open would leave the body scroll-locked. Reset state
 // when we enter sidebar mode.
 _mqTablet.addEventListener('change', (e) => {
+  // Crossing the breakpoint either way changes whether the drawer is a
+  // sidebar (reachable) or an off-screen menu (inert), so sync first and
+  // leave before the sidebar-mode-only reset below.
+  _syncDrawerInert();
   if (!e.matches) return;
   document.getElementById('drawer').classList.remove('open');
   document.getElementById('drawerOverlay').classList.remove('open');
@@ -835,6 +882,52 @@ function handleRowActivate(e, fn) {
     setTimeout(() => el.classList.remove('is-key-active'), 150);
     fn();
   }
+}
+
+// ── DRAWER LIST FILTER ────────────────────────────────────────────────────────
+// The drawer's two management lists — categories and tags — are plain lists of
+// names in a 300px-wide panel. A permanent filter field there would cost a full
+// row of that width for a list you can usually take in at a glance, so it
+// appears only once the list stops fitting: above DRAWER_FILTER_MIN entries.
+// Both panels share this so neither grows an affordance the other lacks.
+const DRAWER_FILTER_MIN = 10;
+
+const DRAWER_LISTS = {
+  cats: { wrap: 'dpCatSearchWrap', input: 'dpCatSearch' },
+  tags: { wrap: 'dpTagSearchWrap', input: 'dpTagSearch' },
+};
+
+// Shows or hides the field for this list and returns the entries to render.
+// Called by renderCategories / renderTagList, which own their row markup.
+function applyDrawerFilter(key, entries, nameOf) {
+  const cfg = DRAWER_LISTS[key];
+  if (!cfg) return entries;
+  const wrap = document.getElementById(cfg.wrap);
+  const show = entries.length > DRAWER_FILTER_MIN;
+  if (wrap) wrap.hidden = !show;
+  // A field that just went off screen must not keep filtering behind it —
+  // deleting entries down past the threshold would otherwise hide rows with
+  // no visible control left to clear.
+  if (!show && appState.drawer.filter[key]) {
+    appState.drawer.filter[key] = '';
+    const input = document.getElementById(cfg.input);
+    if (input) input.value = '';
+  }
+  const q = appState.drawer.filter[key].trim().toLowerCase();
+  return q ? entries.filter((e) => nameOf(e).toLowerCase().includes(q)) : entries;
+}
+
+// True while a filter is narrowing the list, so the renderers can tell an
+// empty account ("no tags yet") from a query that matched nothing.
+function drawerFilterActive(key) {
+  return !!(DRAWER_LISTS[key] && appState.drawer.filter[key].trim());
+}
+
+function filterDrawerList(key, value) {
+  if (!DRAWER_LISTS[key]) return;
+  appState.drawer.filter[key] = value || '';
+  if (key === 'cats') renderCategories();
+  else renderTagList();
 }
 
 // ── MODAL FOCUS MANAGEMENT ────────────────────────────────────────────────────
@@ -886,6 +979,25 @@ function releaseFocusTrap(key) {
   _modalTrapTeardown.delete(key);
 }
 
+// Focus a field once the container it lives in has opened. The delay is for
+// the slide-in — focusing mid-animation makes iOS scroll the field around —
+// but it is also long enough for a fast tap, and an unconditional focus() then
+// lands on the wrong control: the keystrokes the user has already started
+// typing into the field they picked get appended to this one instead. So the
+// claim is dropped as soon as anything inside `root` already has focus.
+//
+// A container that closed again inside the delay needs no check of its own: a
+// modal overlay is display:none by then, the drawer is inert, and a dialog
+// built on the fly is gone from the document — none of them accept focus.
+function focusOnOpen(root, target, delay) {
+  setTimeout(() => {
+    if (!root || !root.isConnected) return;
+    if (root.contains(document.activeElement)) return;
+    const el = typeof target === 'string' ? document.getElementById(target) : target;
+    if (el) el.focus();
+  }, delay);
+}
+
 // Shared open/close tail for the edit modals (goals, budgets, recurring).
 // openModalShell: call AFTER the modal's fields are populated — it records the
 // previously focused element, reveals the overlay, locks body scroll, moves
@@ -899,7 +1011,7 @@ function openModalShell(key, overlayId, focusId) {
   rememberModalFocus(key);
   document.getElementById(overlayId).classList.add('open');
   document.body.style.overflow = 'hidden';
-  setTimeout(() => document.getElementById(focusId).focus(), 200);
+  focusOnOpen(document.getElementById(overlayId), focusId, 200);
   trapFocusIn(document.querySelector('#' + overlayId + ' .modal'), key);
 }
 

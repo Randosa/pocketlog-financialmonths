@@ -927,7 +927,7 @@ function _trendSeries(txs, entityId, granularity, bucketKeys) {
   }
   return {
     entity,
-    label: entity.kind === 'tag' ? `#${entity.name}` : entity.name,
+    label: entity.name,
     color: entity.color,
     data: bucketKeys.map((k) => sums.get(k) || 0),
   };
@@ -964,7 +964,7 @@ function _trendPickerOptions(txs, kind, selectedId, filter) {
     }
   } else {
     for (const r of _totalsByTag(txs, 'all')) {
-      options.push({ id: `tag:${r.name}`, label: `#${r.name}`, color: _tagLineColor(r.name) });
+      options.push({ id: `tag:${r.name}`, label: r.name, color: _tagLineColor(r.name) });
     }
   }
   // With a search query: all matches from the full set, no top-N cap.
@@ -1133,6 +1133,11 @@ async function renderReportTrend(body, txs) {
     .join('');
   const searchPlaceholder =
     appState.trend.kind === 'category' ? tr('reports.searchCategory') : tr('reports.searchTag');
+  // Empty-state copy for .tag-picker-chips:empty::after, which reads data-empty.
+  const emptyLabel =
+    appState.trend.kind === 'category'
+      ? tr('reports.searchNoneCategory')
+      : tr('reports.searchNoneTag');
 
   const segmentedMarkup = `<div class="segmented" role="tablist" aria-label="${_escAttr(tr('reports.trendSelect'))}">
             <button type="button" role="tab" aria-selected="${appState.trend.kind === 'category'}" class="${appState.trend.kind === 'category' ? 'is-active' : ''}" data-action="setTrendKind" data-args='["category"]'>${tr('reports.kindCategories')}</button>
@@ -1144,7 +1149,7 @@ async function renderReportTrend(body, txs) {
               <div class="trend-active-info">
                 <span class="trend-active-dot" style="background:${selected.color}"></span>
                 <div class="trend-active-text">
-                  <div class="trend-active-label">${_escText(selected.kind === 'tag' ? `#${selected.name}` : selected.name)}</div>
+                  <div class="trend-active-label">${_escText(selected.name)}</div>
                   <span class="trend-active-sub">${tr('reports.largestItem')}</span>
                 </div>
               </div>
@@ -1157,7 +1162,7 @@ async function renderReportTrend(body, txs) {
               <svg class="ui-icon" aria-hidden="true"><use href="#icon-search" /></svg>
               <input type="search" placeholder="${searchPlaceholder}" value="${_escAttr(appState.trend.pickerFilter)}" data-action-input="filterTrendChips" data-args='["@value"]' autocomplete="off" />
             </div>
-            <div class="tag-picker-chips" id="trendPickerChips">${chipsMarkup}</div>
+            <div class="tag-picker-chips" id="trendPickerChips" data-empty="${_escAttr(emptyLabel)}">${chipsMarkup}</div>
           </div>`;
 
   if (!selected) {

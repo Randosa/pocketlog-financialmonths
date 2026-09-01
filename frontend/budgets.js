@@ -99,14 +99,28 @@ function _budgetAmountValue(id) {
   return parseAmount(document.getElementById(id).value);
 }
 
+// Categories that already carry a budget. `exceptId` keeps the budget being
+// edited out of its own way, so its category stays selectable.
+function _budgetTakenCategoryIds(exceptId) {
+  return new Set(appState.budgets.list.filter((b) => b.id !== exceptId).map((b) => b.category_id));
+}
+
+// The chooser filters the taken categories itself (CAT_CHOOSERS.budget.taken),
+// so this only seeds the selection.
 function populateBudgetCategorySelect(selectedId) {
-  const sel = document.getElementById('budgetEditCategory');
-  if (sel) _populateCategorySelect(sel, selectedId);
+  resetCatChooser('budget', selectedId);
+  remeasureCatChooser('budget');
 }
 
 function openBudgetModal(id) {
   if (!appState.ledger.categories.length) {
     toast(tr('budget.needCategory'), 'error');
+    return;
+  }
+  // Every category already has a budget — the modal would open on an empty
+  // picker and could only ever fail. Say so instead.
+  if (!id && _budgetTakenCategoryIds(null).size >= appState.ledger.categories.length) {
+    toast(tr('budget.allCategoriesTaken'), 'error');
     return;
   }
   const deleteBtn = document.getElementById('budgetDeleteBtn');
@@ -137,7 +151,7 @@ function closeBudgetModal() {
 }
 
 async function saveBudgetEdit() {
-  const categoryId = parseInt(document.getElementById('budgetEditCategory').value, 10);
+  const categoryId = catChooserValue('budget');
   const amount = _budgetAmountValue('budgetEditAmount');
   const frequency = document.getElementById('budgetEditFrequency').value;
   if (!Number.isInteger(categoryId)) {

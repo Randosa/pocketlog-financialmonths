@@ -15,7 +15,13 @@
 //   5. clearSearch() returns to the report panel via searchExitTarget and
 //      reinstates body.in-report.
 const { test, expect } = require('@playwright/test');
-const { loginViaApi, bootIntoApp, expectNoRawKeys, gotoPanel } = require('./helpers');
+const {
+  loginViaApi,
+  bootIntoApp,
+  expectNoRawKeys,
+  gotoPanel,
+  chooseCategory,
+} = require('./helpers');
 
 const RUN = Date.now();
 const CAT = `FlowBulkCat ${RUN}`;
@@ -45,7 +51,7 @@ test('report drill-down: bottom bar visible, bulk selection bar works, exit retu
   await page.evaluate(() => window.setType('out'));
   await page.fill('#inputAmount', '20');
   await page.fill('#inputDesc', TX_DESC);
-  await page.selectOption('#inputCat', { label: CAT });
+  await chooseCategory(page, 'transaction', CAT);
   await page.click('#submitBtn');
   await expect(page.locator('#modalOverlay')).not.toHaveClass(/open/);
 
@@ -97,9 +103,7 @@ test('report drill-down: bottom bar visible, bulk selection bar works, exit retu
   //    and reinstate body.in-report.
   await page.evaluate(() => window.clearSearch());
   await expect(page.locator('#panel-charts')).toHaveClass(/active/);
-  const hasInReportAfter = await page.evaluate(() =>
-    document.body.classList.contains('in-report'),
-  );
+  const hasInReportAfter = await page.evaluate(() => document.body.classList.contains('in-report'));
   expect(hasInReportAfter, 'body.in-report must be restored after exiting the drill-down').toBe(
     true,
   );

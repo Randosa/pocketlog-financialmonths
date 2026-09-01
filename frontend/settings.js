@@ -9,17 +9,26 @@
 function renderTagList() {
   const box = document.getElementById('tagList');
   if (!box) return;
-  if (!appState.ledger.availableTags.length) {
-    box.innerHTML = `<p class="empty-state-hint">${tr('tags.none')}</p>`;
+  const shown = applyDrawerFilter('tags', appState.ledger.availableTags, (t) => t);
+  if (!shown.length) {
+    // Nothing to show is either an empty account or a query that missed.
+    box.innerHTML = `<p class="empty-state-hint">${tr(drawerFilterActive('tags') ? 'tags.searchNone' : 'tags.none')}</p>`;
     return;
   }
-  box.innerHTML = appState.ledger.availableTags
+  // Same row contract as renderCategories: the drawer's two management lists
+  // are reached the same way. Without role/tabindex the .is-key-active and
+  // :focus-visible states styled for #tagList could never fire — the row was
+  // pointer-only while its neighbour was not.
+  box.innerHTML = shown
     .map(
-      (t) => `<div class="tag-pill cat-pill-edit" data-tag="${_escAttr(t)}">${_escText(t)}</div>`,
+      (t) =>
+        `<div class="cat-pill-edit" role="button" tabindex="0" data-tag="${_escAttr(t)}" aria-label="${_escAttr(tr('tags.editAria', { name: t }))}">${_escText(t)}</div>`,
     )
     .join('');
   box.querySelectorAll('[data-tag]').forEach((el) => {
-    el.addEventListener('click', () => openTagModal(el.dataset.tag));
+    const open = () => openTagModal(el.dataset.tag);
+    el.addEventListener('click', open);
+    el.addEventListener('keydown', (e) => handleRowActivate(e, open));
   });
 }
 
@@ -40,7 +49,7 @@ function openTagModal(name) {
   }
   document.getElementById('tagModalOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
-  setTimeout(() => document.getElementById('tagEditName').focus(), 200);
+  focusOnOpen(document.getElementById('tagModalOverlay'), 'tagEditName', 200);
   trapFocusIn(document.querySelector('#tagModalOverlay .modal'), 'tag');
 }
 
@@ -420,7 +429,7 @@ async function openFailedRecovery() {
 
   document.body.appendChild(overlay);
   document.body.style.overflow = 'hidden';
-  setTimeout(() => retry.focus(), 50);
+  focusOnOpen(overlay, retry, 50);
 }
 
 // Push the dead-lettered writes back into the outbox and replay them. With the
@@ -1481,7 +1490,7 @@ function openChangePasswordModal() {
   _setAuthError('pwModalError', '');
   document.getElementById('pwModalOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
-  setTimeout(() => document.getElementById('pwModalCurrent')?.focus(), 50);
+  focusOnOpen(document.getElementById('pwModalOverlay'), 'pwModalCurrent', 50);
 }
 function closePwModal() {
   document.getElementById('pwModalOverlay').classList.remove('open');
@@ -1622,7 +1631,7 @@ function openAdminCreateUserModal() {
   _setAuthError('adminCreateError', '');
   document.getElementById('adminCreateUserOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
-  setTimeout(() => document.getElementById('adminCreateUsername')?.focus(), 50);
+  focusOnOpen(document.getElementById('adminCreateUserOverlay'), 'adminCreateUsername', 50);
 }
 function closeAdminCreateUserModal() {
   document.getElementById('adminCreateUserOverlay').classList.remove('open');
@@ -1668,7 +1677,7 @@ function openAdminResetPwModal(userId) {
   _setAuthError('adminResetPwError', '');
   document.getElementById('adminResetPwOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
-  setTimeout(() => document.getElementById('adminResetPwInput')?.focus(), 50);
+  focusOnOpen(document.getElementById('adminResetPwOverlay'), 'adminResetPwInput', 50);
 }
 function closeAdminResetPwModal() {
   document.getElementById('adminResetPwOverlay').classList.remove('open');

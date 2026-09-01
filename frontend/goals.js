@@ -125,9 +125,46 @@ function _goalAmountValue(id) {
   return parseAmount(document.getElementById(id).value);
 }
 
+// Categories that already carry a goal. `exceptId` keeps the goal being
+// edited out of its own way, so its category stays selectable.
+function _goalTakenCategoryIds(exceptId) {
+  return new Set(appState.goals.list.filter((g) => g.id !== exceptId).map((g) => g.category_id));
+}
+
+// The chooser filters the taken categories itself (CAT_CHOOSERS.goal.taken),
+// so this only seeds the selection.
 function populateGoalCategorySelect(selectedId) {
-  const sel = document.getElementById('goalEditCategory');
-  if (sel) _populateCategorySelect(sel, selectedId);
+  resetCatChooser('goal', selectedId);
+  remeasureCatChooser('goal');
+}
+
+// A goal on the "Urlaub" category is almost always called "Urlaub", so the
+// new-goal form offers that name and keeps it in step while the user browses
+// the picker. It only ever overwrites its own suggestion (or an empty field) —
+// once the user types anything of their own, the field is theirs. Editing an
+// existing goal never touches the name.
+function _syncGoalNameToCategory() {
+  if (appState.goals.editingId) return;
+  const field = document.getElementById('goalEditName');
+  if (!field) return;
+  if (field.value.trim() && field.value !== appState.goals.autoName) return;
+  const cat = appState.ledger.categories.find((c) => c.id === catChooserValue('goal'));
+  field.value = cat ? cat.name : '';
+  appState.goals.autoName = field.value;
+}
+
+// The suggested name is a starting point, not a value the user has to delete.
+// openModalShell focuses the field on a timer, so we hook that one focus and
+// select what is in it — the first keystroke then replaces the suggestion, and
+// leaving it alone still keeps it. One-shot, so a later focus behaves normally.
+function _selectSuggestedNameOnce() {
+  const field = document.getElementById('goalEditName');
+  if (!field) return;
+  const onFocus = () => {
+    field.removeEventListener('focus', onFocus);
+    if (field.value && field.value === appState.goals.autoName) field.select();
+  };
+  field.addEventListener('focus', onFocus);
 }
 
 function onGoalDirectionChange() {
@@ -138,6 +175,11 @@ function onGoalDirectionChange() {
     dir === 'pay_down' ? tr('goals.initialDebt') : tr('goals.initialSaved');
   document.getElementById('goalTargetLabel').textContent =
     dir === 'pay_down' ? tr('goals.targetRemaining') : tr('goals.targetAmount');
+  // A savings goal fills from income, a debt tracker is paid down by expenses:
+  // the direction is this form's "type", so switching it re-ranks the chips —
+  // and may re-pick the suggested category, which the name follows.
+  rerankChoosersForType('goal');
+  _syncGoalNameToCategory();
 }
 
 function renderGoalColorSwatches() {
@@ -173,12 +215,20 @@ function openGoalModal(id) {
     title.textContent = tr('goals.editTitle');
     deleteBtn.style.display = '';
   } else {
+    // Every category already carries a goal — the modal would open on an
+    // empty picker and could only ever fail. Say so instead.
+    if (_goalTakenCategoryIds(null).size >= appState.ledger.categories.length) {
+      toast(tr('goals.allCategoriesTaken'), 'error');
+      return;
+    }
     appState.goals.editingId = null;
     appState.goals.editingColor =
       CAT_CREATE_COLORS[appState.goals.list.length % CAT_CREATE_COLORS.length];
     document.getElementById('goalEditName').value = '';
     document.getElementById('goalEditDirection').value = 'save_up';
     populateGoalCategorySelect(null); // defaults to the first sorted option
+    _syncGoalNameToCategory();
+    _selectSuggestedNameOnce();
     document.getElementById('goalEditInitial').value = '';
     document.getElementById('goalEditTarget').value = '';
     const now = new Date();
@@ -203,7 +253,7 @@ function closeGoalModal() {
 async function saveGoalEdit() {
   const name = document.getElementById('goalEditName').value.trim();
   const direction = document.getElementById('goalEditDirection').value;
-  const categoryId = parseInt(document.getElementById('goalEditCategory').value, 10);
+  const categoryId = catChooserValue('goal');
   const initial = _goalAmountValue('goalEditInitial');
   const target = _goalAmountValue('goalEditTarget');
   const startDate = document.getElementById('goalEditStartDate').value;

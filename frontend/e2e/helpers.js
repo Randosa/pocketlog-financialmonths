@@ -91,11 +91,25 @@ async function bootIntoApp(page) {
   // Polled via evaluate + toPass: waitForFunction needs eval, which the
   // app's CSP (script-src 'self') forbids.
   await expect(async () => {
-    const ready = await page.evaluate(
-      () => !!window._csrfToken && appState.ledger.categories.length > 0,
-    );
+    const ready = await page.evaluate(() => !!window._csrfToken && appState.boot.ready);
     expect(ready).toBeTruthy();
   }).toPass({ timeout: 15000, intervals: [100, 250, 500] });
+}
+
+// Modal overlays slide in (overlay-in / modal-in, var(--dur-slow)). Clicking a
+// control while it is still moving is what Playwright reports as "element is
+// not stable", and for a styled switch the click can land as a no-op. Wait for
+// the real signal — the animations themselves — rather than a fixed sleep.
+// Infinite animations (a spinner) never finish, so they are skipped.
+async function modalSettled(page, overlayId) {
+  await page.evaluate(async (id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const running = el
+      .getAnimations({ subtree: true })
+      .filter((a) => a.effect && a.effect.getTiming().iterations !== Infinity);
+    await Promise.all(running.map((a) => a.finished.catch(() => {})));
+  }, overlayId);
 }
 
 // Drive the app's own navigation directly rather than clicking the nav item:
@@ -110,4 +124,63 @@ async function gotoPanel(page, id) {
   }).toPass({ timeout: 15000, intervals: [200, 500, 1000] });
 }
 
-module.exports = { ADMIN_USER, ADMIN_PASS, loginViaApi, bootIntoApp, expectNoRawKeys, gotoPanel };
+// The five category choosers, by context: the search field and the chip row
+// each one owns. Every form that used to hold a <select> drives these now.
+const CAT_CHOOSER_IDS = {
+  transaction: { input: 'catSearch', row: 'catSuggestions' },
+  recurring: { input: 'recCatSearch', row: 'recCatSuggestions' },
+  goal: { input: 'goalCatSearch', row: 'goalCatSuggestions' },
+  budget: { input: 'budgetCatSearch', row: 'budgetCatSuggestions' },
+  bulk: { input: 'bulkCatSearch', row: 'bulkCatSuggestions' },
+};
+
+// Labels of the chips currently on a chooser's row. With an empty field that
+// is the ranked top two rows, not every category — so a name missing from it
+// proves nothing on its own; use catChooserOffers for that.
+function catChipLabels(page, ctx) {
+  return page.$$eval(`#${CAT_CHOOSER_IDS[ctx].row} .cat-suggestion:not(.cat-create)`, (els) =>
+    els.map((e) => e.textContent.trim()),
+  );
+}
+
+// Whether a chooser will offer a category at all — searched by name, which is
+// how a user reaches past the visible rows. The goal and budget choosers hide
+// the categories already spoken for, and that omission is the assertion.
+async function catChooserOffers(page, ctx, name) {
+  await page.fill(`#${CAT_CHOOSER_IDS[ctx].input}`, name);
+  const labels = await catChipLabels(page, ctx);
+  await page.fill(`#${CAT_CHOOSER_IDS[ctx].input}`, '');
+  return labels.includes(name);
+}
+
+// Pick a category in a chooser: search for it, then tap its chip. Mirrors what
+// a user does, and works regardless of whether the name is among the ranked
+// chips already on screen.
+async function chooseCategory(page, ctx, name) {
+  const { input, row } = CAT_CHOOSER_IDS[ctx];
+  await page.fill(`#${input}`, name);
+  const chip = page.locator(`#${row} .cat-suggestion:not(.cat-create)`, { hasText: name });
+  await expect(chip.first()).toBeVisible();
+  await chip.first().click();
+  // Picking clears the query; the row goes back to the ranked overview.
+  await expect(page.locator(`#${input}`)).toHaveValue('');
+}
+
+// The id the chooser will hand its form on save.
+function chosenCategoryId(page, ctx) {
+  return page.evaluate((c) => appState.catChooser[c].selectedId, ctx);
+}
+
+module.exports = {
+  modalSettled,
+  ADMIN_USER,
+  ADMIN_PASS,
+  loginViaApi,
+  bootIntoApp,
+  expectNoRawKeys,
+  gotoPanel,
+  catChipLabels,
+  catChooserOffers,
+  chooseCategory,
+  chosenCategoryId,
+};

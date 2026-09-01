@@ -76,7 +76,13 @@ test('force-change on first login, password policy, and session invalidation', a
   await userPage.evaluate(() => window.submitForcePassword());
   await expect(userPage.locator('#forcePwView')).toBeHidden();
   await expect(userPage.locator('.fab')).toBeVisible();
-  await expect.poll(() => userPage.evaluate(() => window._csrfToken)).toBeTruthy();
+  // This page boots through the force-change form rather than bootIntoApp, so
+  // gate it the same way: the auth view comes down at the *start* of the boot
+  // load chain, and driving a modal while the rest of it is still landing is
+  // how this step used to fail intermittently.
+  await expect
+    .poll(() => userPage.evaluate(() => !!window._csrfToken && appState.boot.ready))
+    .toBe(true);
 
   // --- A second, independent session for the same user ---
   const otherCtx = await browser.newContext();

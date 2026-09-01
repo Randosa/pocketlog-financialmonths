@@ -494,6 +494,25 @@
           </div>
           <div class="drawer-section">
             <button class="save-btn" data-action="openCatModal" data-i18n="categories.create">Kategorie erstellen</button>
+            <div class="search-wrap drawer-search" id="dpCatSearchWrap" hidden>
+              <span class="search-icon" aria-hidden="true">
+                <svg class="ui-icon"><use href="#icon-search" /></svg>
+              </span>
+              <input
+                class="search-input"
+                id="dpCatSearch"
+                type="search"
+                data-i18n-attr="placeholder:categories.searchPlaceholder;aria-label:categories.searchPlaceholder"
+                enterkeyhint="search"
+                inputmode="search"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                data-action-input="filterDrawerList"
+                data-args='["cats", "@value"]'
+              />
+            </div>
             <div id="catList" class="drawer-chip-list"></div>
           </div>
         </div>
@@ -513,6 +532,25 @@
           </div>
           <div class="drawer-section">
             <button class="save-btn" data-action="openTagModal" data-i18n="tags.create">Tag erstellen</button>
+            <div class="search-wrap drawer-search" id="dpTagSearchWrap" hidden>
+              <span class="search-icon" aria-hidden="true">
+                <svg class="ui-icon"><use href="#icon-search" /></svg>
+              </span>
+              <input
+                class="search-input"
+                id="dpTagSearch"
+                type="search"
+                data-i18n-attr="placeholder:tags.searchPlaceholder;aria-label:tags.searchPlaceholder"
+                enterkeyhint="search"
+                inputmode="search"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                data-action-input="filterDrawerList"
+                data-args='["tags", "@value"]'
+              />
+            </div>
             <div id="tagList" class="drawer-chip-list"></div>
           </div>
         </div>
@@ -1165,36 +1203,84 @@
               pattern="[0-9]*[.,]?[0-9]{0,2}"
               autocomplete="off"
               enterkeyhint="done"
+              aria-describedby="errAmount"
               data-action-blur="normalizeAmountInput"
+              data-action-input="clearBookingFieldError" data-args='["inputAmount"]'
             />
+            <p class="field-error" id="errAmount" role="alert" hidden></p>
           </div>
           <div class="form-group">
             <label data-i18n="tx.date">Datum</label>
-            <input type="date" id="inputDate" />
+            <input
+              type="date"
+              id="inputDate"
+              aria-describedby="errDate"
+              data-action-change="clearBookingFieldError" data-args='["inputDate"]'
+            />
+            <p class="field-error" id="errDate" role="alert" hidden></p>
           </div>
           <div class="form-group">
-            <label data-i18n="tx.category">Kategorie</label>
-            <select id="inputCat"></select>
+            <label id="catSearchLabel" for="catSearch" data-i18n="tx.category">Kategorie</label>
+            <div class="search-wrap cat-chooser-search">
+              <span class="search-icon" aria-hidden="true">
+                <svg class="ui-icon"><use href="#icon-search" /></svg>
+              </span>
+              <input
+                class="search-input"
+                id="catSearch"
+                type="search"
+                maxlength="100"
+                placeholder="Kategorie suchen oder anlegen"
+                data-i18n-attr="placeholder:categories.searchOrCreate"
+                enterkeyhint="done"
+                inputmode="search"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                data-action-input="filterCatChooser"
+                data-action-keydown="handleCatChooserKey"
+                data-args='["transaction", "@value", "@event"]'
+              />
+            </div>
+            <!-- The row is the selection: the chosen category carries the
+                 accent, so nothing is listed twice. -->
+            <div class="cat-suggestions" id="catSuggestions" role="group" aria-labelledby="catSearchLabel"></div>
+            <p class="cat-chooser-hint" id="catSuggestionsHint" role="status" hidden></p>
+            <p class="field-error" id="errCat" role="alert" hidden></p>
           </div>
           <div class="form-group">
             <label data-i18n="tx.notes">Notizen</label>
             <input type="text" id="inputDesc" placeholder="z.B. Supermarkt" data-i18n-attr="placeholder:tx.notesPlaceholder" />
           </div>
           <div class="form-group">
-            <label data-i18n="tx.tags">Tags</label>
-            <div class="tags-input-wrap" id="tagsWrap">
-              <button
-                type="button"
-                class="tag-add-btn"
-                id="tagPickerBtn"
-                aria-label="Tag hinzufügen"
-                data-i18n-attr="aria-label:tags.addAria"
-                data-action="openTagPicker"
-              >
-                <svg class="ui-icon" aria-hidden="true"><use href="#icon-plus" /></svg>
-              </button>
+            <label id="tagSearchLabel" for="tagSearch" data-i18n="tx.tags">Tags</label>
+            <div class="search-wrap tag-chooser-search">
+              <span class="search-icon" aria-hidden="true">
+                <svg class="ui-icon"><use href="#icon-search" /></svg>
+              </span>
+              <input
+                class="search-input"
+                id="tagSearch"
+                type="search"
+                maxlength="64"
+                placeholder="Tags suchen oder anlegen"
+                data-i18n-attr="placeholder:tags.searchOrCreate"
+                enterkeyhint="done"
+                inputmode="search"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                data-action-input="filterTagChooser"
+                data-action-keydown="handleTagChooserKey"
+                data-args='["transaction", "@value", "@event"]'
+              />
             </div>
-            <div class="tag-suggestions" id="tagSuggestions"></div>
+            <!-- The row is the selection: a chip carries the accent when the
+                 tag is on the booking, so nothing is listed twice. -->
+            <div class="tag-suggestions" id="tagSuggestions" role="group" aria-labelledby="tagSearchLabel"></div>
+            <p class="tag-chooser-hint" id="tagSuggestionsHint" role="status" hidden></p>
           </div>
         </div>
         <div class="modal-footer">
@@ -1250,34 +1336,17 @@
           <button class="modal-cancel-btn" data-action="closeTagPicker" aria-label="Schließen" data-i18n-attr="aria-label:common.close">
             <svg class="ui-icon" aria-hidden="true"><use href="#icon-close" /></svg>
           </button>
-          <h2 id="tagPickerTitle" data-i18n="tags.pickTitle">Tag wählen</h2>
+          <!-- openTagPickerFor always writes the title (add / remove); the picker
+               is bulk-only now, so there is no neutral third case to seed. -->
+          <h2 id="tagPickerTitle">Tag hinzufügen</h2>
         </div>
         <div class="modal-body">
-          <div class="form-group" id="tagPickerNewGroup">
-            <label data-i18n="tags.newLabel">Neuen Tag anlegen</label>
-            <div class="tag-create-row">
-              <input
-                type="text"
-                id="tagPickerNew"
-                maxlength="64"
-                placeholder="Neuer Tag"
-                data-i18n-attr="placeholder:tags.newPlaceholder"
-                autocomplete="off"
-                data-action-keydown="handleTagPickerNew" data-args='["@event"]'
-              />
-              <button
-                type="button"
-                class="tag-add-btn"
-                data-action="addTagFromPicker"
-                aria-label="Tag erstellen"
-                data-i18n-attr="aria-label:tags.createAria"
-              >
-                <svg class="ui-icon" aria-hidden="true"><use href="#icon-plus" /></svg>
-              </button>
-            </div>
-          </div>
           <div class="form-group">
-            <label data-i18n="tags.existing">Vorhandene Tags</label>
+            <label id="tagPickerLabel" for="tagPickerFilter" data-i18n="tx.tags">Tags</label>
+            <!-- One field for both jobs, as in the booking form: it searches,
+                 and when adding it also offers to create what was typed.
+                 openTagPickerFor swaps the placeholder for the remove mode,
+                 which can only touch tags that are already there. -->
             <div class="search-wrap tag-picker-search">
               <span class="search-icon" aria-hidden="true">
                 <svg class="ui-icon"><use href="#icon-search" /></svg>
@@ -1286,18 +1355,22 @@
                 class="search-input"
                 id="tagPickerFilter"
                 type="search"
-                placeholder="Tags durchsuchen"
-                data-i18n-attr="placeholder:tags.searchPlaceholder"
-                enterkeyhint="search"
+                maxlength="64"
+                placeholder="Tags suchen oder anlegen"
+                data-i18n-attr="placeholder:tags.searchOrCreate"
+                enterkeyhint="done"
                 inputmode="search"
-                data-action-input="renderTagPickerChips"
                 autocomplete="off"
                 autocorrect="off"
                 autocapitalize="off"
                 spellcheck="false"
+                data-action-input="renderTagPickerChips"
+                data-action-keydown="handleTagPickerKey"
+                data-args='["@value", "@event"]'
               />
             </div>
-            <div class="tag-picker-chips" id="tagPickerChips"></div>
+            <div class="tag-picker-chips" id="tagPickerChips" role="group" aria-labelledby="tagPickerLabel"></div>
+            <p class="tag-chooser-hint" id="tagPickerHint" role="status" hidden></p>
           </div>
         </div>
         <div class="modal-footer">
@@ -1317,8 +1390,33 @@
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label for="bulkCatSelect" data-i18n="tx.category">Kategorie</label>
-            <select id="bulkCatSelect"></select>
+            <label id="bulkCatSearchLabel" for="bulkCatSearch" data-i18n="tx.category">Kategorie</label>
+            <div class="search-wrap cat-chooser-search">
+              <span class="search-icon" aria-hidden="true">
+                <svg class="ui-icon"><use href="#icon-search" /></svg>
+              </span>
+              <input
+                class="search-input"
+                id="bulkCatSearch"
+                type="search"
+                maxlength="100"
+                placeholder="Kategorie suchen oder anlegen"
+                data-i18n-attr="placeholder:categories.searchOrCreate"
+                enterkeyhint="done"
+                inputmode="search"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                data-action-input="filterCatChooser"
+                data-action-keydown="handleCatChooserKey"
+                data-args='["bulk", "@value", "@event"]'
+              />
+            </div>
+            <!-- The row is the selection: the chosen category carries the
+                 accent, so nothing is listed twice. -->
+            <div class="cat-suggestions" id="bulkCatSuggestions" role="group" aria-labelledby="bulkCatSearchLabel"></div>
+            <p class="cat-chooser-hint" id="bulkCatSuggestionsHint" role="status" hidden></p>
           </div>
         </div>
         <div class="modal-footer">
@@ -1396,8 +1494,33 @@
             </select>
           </div>
           <div class="form-group">
-            <label data-i18n="goals.category">Kategorie</label>
-            <select id="goalEditCategory"></select>
+            <label id="goalCatSearchLabel" for="goalCatSearch" data-i18n="goals.category">Kategorie</label>
+            <div class="search-wrap cat-chooser-search">
+              <span class="search-icon" aria-hidden="true">
+                <svg class="ui-icon"><use href="#icon-search" /></svg>
+              </span>
+              <input
+                class="search-input"
+                id="goalCatSearch"
+                type="search"
+                maxlength="100"
+                placeholder="Kategorie suchen oder anlegen"
+                data-i18n-attr="placeholder:categories.searchOrCreate"
+                enterkeyhint="done"
+                inputmode="search"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                data-action-input="filterCatChooser"
+                data-action-keydown="handleCatChooserKey"
+                data-args='["goal", "@value", "@event"]'
+              />
+            </div>
+            <!-- The row is the selection: the chosen category carries the
+                 accent, so nothing is listed twice. -->
+            <div class="cat-suggestions" id="goalCatSuggestions" role="group" aria-labelledby="goalCatSearchLabel"></div>
+            <p class="cat-chooser-hint" id="goalCatSuggestionsHint" role="status" hidden></p>
           </div>
           <div class="form-group">
             <label id="goalInitialLabel" data-i18n="goals.initialAmount">Startbetrag</label>
@@ -1441,8 +1564,33 @@
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label data-i18n="budget.category">Kategorie</label>
-            <select id="budgetEditCategory"></select>
+            <label id="budgetCatSearchLabel" for="budgetCatSearch" data-i18n="budget.category">Kategorie</label>
+            <div class="search-wrap cat-chooser-search">
+              <span class="search-icon" aria-hidden="true">
+                <svg class="ui-icon"><use href="#icon-search" /></svg>
+              </span>
+              <input
+                class="search-input"
+                id="budgetCatSearch"
+                type="search"
+                maxlength="100"
+                placeholder="Kategorie suchen oder anlegen"
+                data-i18n-attr="placeholder:categories.searchOrCreate"
+                enterkeyhint="done"
+                inputmode="search"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                data-action-input="filterCatChooser"
+                data-action-keydown="handleCatChooserKey"
+                data-args='["budget", "@value", "@event"]'
+              />
+            </div>
+            <!-- The row is the selection: the chosen category carries the
+                 accent, so nothing is listed twice. -->
+            <div class="cat-suggestions" id="budgetCatSuggestions" role="group" aria-labelledby="budgetCatSearchLabel"></div>
+            <p class="cat-chooser-hint" id="budgetCatSuggestionsHint" role="status" hidden></p>
           </div>
           <div class="form-group">
             <label data-i18n="budget.amount">Limit</label>
@@ -1491,7 +1639,7 @@
           </div>
           <div class="form-group">
             <label data-i18n="recurring.type">Typ</label>
-            <select id="recEditType">
+            <select id="recEditType" data-action-change="onRecurringTypeChange">
               <option value="out" data-i18n="recurring.typeExpense">Ausgabe</option>
               <option value="in" data-i18n="recurring.typeIncome">Einnahme</option>
             </select>
@@ -1501,8 +1649,33 @@
             <input type="text" class="amount-input" id="recEditAmount" placeholder="0,00" inputmode="decimal" pattern="[0-9]*[.,]?[0-9]{0,2}" autocomplete="off" />
           </div>
           <div class="form-group">
-            <label data-i18n="recurring.category">Kategorie</label>
-            <select id="recEditCategory"></select>
+            <label id="recCatSearchLabel" for="recCatSearch" data-i18n="recurring.category">Kategorie</label>
+            <div class="search-wrap cat-chooser-search">
+              <span class="search-icon" aria-hidden="true">
+                <svg class="ui-icon"><use href="#icon-search" /></svg>
+              </span>
+              <input
+                class="search-input"
+                id="recCatSearch"
+                type="search"
+                maxlength="100"
+                placeholder="Kategorie suchen oder anlegen"
+                data-i18n-attr="placeholder:categories.searchOrCreate"
+                enterkeyhint="done"
+                inputmode="search"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                data-action-input="filterCatChooser"
+                data-action-keydown="handleCatChooserKey"
+                data-args='["recurring", "@value", "@event"]'
+              />
+            </div>
+            <!-- The row is the selection: the chosen category carries the
+                 accent, so nothing is listed twice. -->
+            <div class="cat-suggestions" id="recCatSuggestions" role="group" aria-labelledby="recCatSearchLabel"></div>
+            <p class="cat-chooser-hint" id="recCatSuggestionsHint" role="status" hidden></p>
           </div>
           <div class="form-group">
             <label data-i18n="recurring.description">Beschreibung</label>
@@ -1543,19 +1716,33 @@
             <input type="number" id="recEditMaxOccurrences" min="1" max="10000" />
           </div>
           <div class="form-group">
-            <label data-i18n="tx.tags">Tags</label>
-            <div class="tags-input-wrap" id="recTagsWrap">
-              <button
-                type="button"
-                class="tag-add-btn"
-                id="recTagPickerBtn"
-                aria-label="Tag hinzufügen"
-                data-i18n-attr="aria-label:tags.addAria"
-                data-action="openTagPickerFor" data-args='["recurring"]'
-              >
-                <svg class="ui-icon" aria-hidden="true"><use href="#icon-plus" /></svg>
-              </button>
+            <label id="recTagSearchLabel" for="recTagSearch" data-i18n="tx.tags">Tags</label>
+            <div class="search-wrap tag-chooser-search">
+              <span class="search-icon" aria-hidden="true">
+                <svg class="ui-icon"><use href="#icon-search" /></svg>
+              </span>
+              <input
+                class="search-input"
+                id="recTagSearch"
+                type="search"
+                maxlength="64"
+                placeholder="Tags suchen oder anlegen"
+                data-i18n-attr="placeholder:tags.searchOrCreate"
+                enterkeyhint="done"
+                inputmode="search"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                data-action-input="filterTagChooser"
+                data-action-keydown="handleTagChooserKey"
+                data-args='["recurring", "@value", "@event"]'
+              />
             </div>
+            <!-- The row is the selection: a chip carries the accent when the
+                 tag is on the rule, so nothing is listed twice. -->
+            <div class="tag-suggestions" id="recTagSuggestions" role="group" aria-labelledby="recTagSearchLabel"></div>
+            <p class="tag-chooser-hint" id="recTagSuggestionsHint" role="status" hidden></p>
           </div>
           <!-- Skips block, only visible on edit. The skip button is
                described by the status hint above (#recEditStatusHint),

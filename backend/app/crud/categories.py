@@ -7,13 +7,20 @@ entry point. ``_seed_default_categories`` provisions a new user's starter
 set and is called from the users module.
 """
 
-from sqlalchemy import and_, select
+from datetime import date as date_type
+from datetime import timedelta
+
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import exceptions, models, schemas
 from ._shared import _get_owned
 from .defaults import DEFAULT_CATEGORIES, DEFAULT_CATEGORY_NAMES, DEFAULT_LOCALE
+
+# Window for the usage counts returned by ``list_categories``; kept in step
+# with tags.TAG_COUNT_WINDOW_DAYS so both choosers rank over the same period.
+CATEGORY_COUNT_WINDOW_DAYS = 90
 
 # Entities that block category deletion, paired with the error each raises.
 # Checked in order by delete_category; extend this when a new entity gains a
@@ -45,6 +52,8 @@ def _seed_default_categories(
 
 
 def list_categories(db: Session, user_id: int) -> list[models.Category]:
+    """Plain listing, ORM rows. Backup and CSV export read these by attribute
+    and have no use for usage counts — those live in the sibling below."""
     return list(
         db.scalars(
             select(models.Category)
@@ -52,6 +61,62 @@ def list_categories(db: Session, user_id: int) -> list[models.Category]:
             .order_by(models.Category.id)
         )
     )
+
+
+def list_categories_with_usage(db: Session, user_id: int) -> list[dict]:
+    """Categories plus their recent usage, split by transaction type.
+
+    The counts drive the frontend's category chooser: it shows only the top
+    two rows of chips and reaches the rest through search, so the ranking is
+    what decides whether the everyday booking is one tap. Splitting by type
+    keeps income categories out of the way while booking an expense.
+
+    Same 90-day window as ``tags.list_tags`` — long enough to carry the
+    quarterly rhythm, short enough that a category you have stopped using
+    drops out of the visible rows. Shaped like ``list_tags``'s LEFT JOIN so
+    a category with no transactions still comes back, with count 0.
+    """
+    cutoff = date_type.today() - timedelta(days=CATEGORY_COUNT_WINDOW_DAYS)
+    recent = case((models.Transaction.date >= cutoff, 1), else_=0)
+    recent_in = case(
+        (and_(models.Transaction.date >= cutoff, models.Transaction.type == "in"), 1),
+        else_=0,
+    )
+    recent_out = case(
+        (and_(models.Transaction.date >= cutoff, models.Transaction.type == "out"), 1),
+        else_=0,
+    )
+    rows = db.execute(
+        select(
+            models.Category,
+            func.coalesce(func.sum(recent), 0),
+            func.coalesce(func.sum(recent_in), 0),
+            func.coalesce(func.sum(recent_out), 0),
+        )
+        .select_from(models.Category)
+        .join(
+            models.Transaction,
+            models.Transaction.category_id == models.Category.id,
+            isouter=True,
+        )
+        .where(models.Category.user_id == user_id)
+        .group_by(models.Category.id)
+        .order_by(models.Category.id)
+    ).all()
+    # Dicts rather than ORM rows: the counts are query results, not columns,
+    # and CategoryOut reads them by name either way.
+    return [
+        {
+            "id": cat.id,
+            "name": cat.name,
+            "icon": cat.icon,
+            "color": cat.color,
+            "count": int(count or 0),
+            "count_in": int(c_in or 0),
+            "count_out": int(c_out or 0),
+        }
+        for cat, count, c_in, c_out in rows
+    ]
 
 
 def get_or_create_category(db: Session, user_id: int, name: str) -> models.Category:

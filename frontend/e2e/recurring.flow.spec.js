@@ -6,7 +6,7 @@
 // booking, deactivation sticks, and deleting the rule leaves the
 // materialized transactions intact (source_rule_id → NULL).
 const { test, expect } = require('@playwright/test');
-const { loginViaApi, bootIntoApp, expectNoRawKeys, gotoPanel } = require('./helpers');
+const { loginViaApi, bootIntoApp, expectNoRawKeys, gotoPanel, modalSettled } = require('./helpers');
 
 const RUN = Date.now();
 const RULE_NAME = `FlowRule ${RUN}`;
@@ -75,6 +75,7 @@ test('rule materializes, skip-next advances, delete keeps bookings', async ({ pa
   // --- Deactivation sticks ---
   await page.evaluate((id) => window.openRecurringModal(id), rule.id);
   await expect(page.locator('#recurringModalOverlay')).toHaveClass(/open/);
+  await modalSettled(page, 'recurringModalOverlay');
   await page.uncheck('#recEditActive');
   await page.evaluate(() => window.saveRecurringEdit());
   await expect(page.locator('#recurringModalOverlay')).not.toHaveClass(/open/);

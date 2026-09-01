@@ -3,12 +3,17 @@ import { describe, expect, it } from 'vitest';
 import utils from '../utils.js';
 
 const {
+  MAX_TAG_LENGTH,
+  MAX_TAGS_PER_TX,
+  _normaliseNewTag,
   _iso,
   _daysInMonth,
   _escAttr,
   _escText,
   _parseAmountWith,
   _formatAmountWith,
+  _compareUsage,
+  _defaultBookingDate,
   _filterTransactions,
   _passwordErrorKey,
   _importReport,
@@ -486,9 +491,9 @@ describe('_failedEntrySummary', () => {
     expect(_failedEntrySummary({ method: 'DELETE', path: '/goals/2', body: null }).entity).toBe(
       'goal',
     );
-    expect(_failedEntrySummary({ method: 'POST', path: '/recurring', body: { name: 'Miete' } })).toMatchObject(
-      { entity: 'recurring', label: 'Miete' },
-    );
+    expect(
+      _failedEntrySummary({ method: 'POST', path: '/recurring', body: { name: 'Miete' } }),
+    ).toMatchObject({ entity: 'recurring', label: 'Miete' });
     expect(_failedEntrySummary({ method: 'POST', path: '/budgets', body: {} }).entity).toBe(
       'budget',
     );
@@ -539,5 +544,129 @@ describe('_failedEntrySummary', () => {
     expect(
       _failedEntrySummary({ method: 'POST', path: '/transactions?x=1', body: {} }).entity,
     ).toBe('transaction');
+  });
+});
+
+describe('_normaliseNewTag', () => {
+  it('mirrors the server-side limits', () => {
+    // Kept in step with backend/app/schemas.py; a drift here is what makes a
+    // tag round-trip fail with a 422 the user cannot read.
+    expect(MAX_TAG_LENGTH).toBe(64);
+    expect(MAX_TAGS_PER_TX).toBe(20);
+  });
+
+  it('trims surrounding whitespace', () => {
+    expect(_normaliseNewTag('  Versicherung  ')).toBe('Versicherung');
+  });
+
+  it('keeps inner spacing and non-ASCII intact', () => {
+    expect(_normaliseNewTag('Günther Lang Gmbh')).toBe('Günther Lang Gmbh');
+  });
+
+  it('strips control characters the API would reject', () => {
+    expect(_normaliseNewTag('Stro\u0000m\u001f')).toBe('Strom');
+    expect(_normaliseNewTag('a\u007fb')).toBe('ab');
+  });
+
+  it('caps at the maximum length', () => {
+    expect(_normaliseNewTag('x'.repeat(80))).toHaveLength(MAX_TAG_LENGTH);
+  });
+
+  it('trims before capping, so padding cannot eat the name', () => {
+    expect(_normaliseNewTag('   ' + 'y'.repeat(64) + '   ')).toBe('y'.repeat(64));
+  });
+
+  it('returns an empty string for anything that would not survive', () => {
+    // Callers treat '' as "nothing to create", so blank and control-only
+    // input must not reach the chooser as a tag.
+    for (const raw of ['', '   ', '\u0000\u001f', null, undefined]) {
+      expect(_normaliseNewTag(raw)).toBe('');
+    }
+  });
+});
+
+describe('_compareUsage', () => {
+  // {all, in, out} as the API reports it.
+  const use = (all, i, o) => ({ all, in: i, out: o });
+  // Sort helper: the choosers always break the remaining tie by name, so the
+  // tests do too — that is the real call shape.
+  const rank = (entries, type) =>
+    [...entries]
+      .sort((a, b) => _compareUsage(a.c, b.c, type) || a.name.localeCompare(b.name))
+      .map((e) => e.name);
+
+  const POOL = [
+    { name: 'Gehalt', c: use(4, 4, 0) }, // income only
+    { name: 'Lebensmittel', c: use(20, 0, 20) }, // expenses only
+    { name: 'Mobilität', c: use(6, 1, 5) }, // mostly expenses
+    { name: 'Unbenutzt', c: use(0, 0, 0) },
+  ];
+
+  it('ranks by the count for the requested type', () => {
+    expect(rank(POOL, 'out')).toEqual(['Lebensmittel', 'Mobilität', 'Gehalt', 'Unbenutzt']);
+    expect(rank(POOL, 'in')).toEqual(['Gehalt', 'Mobilität', 'Lebensmittel', 'Unbenutzt']);
+  });
+
+  it('keeps the income category out of the way when booking an expense', () => {
+    // The whole point of the split: 4 income uses must not outrank 5 expense
+    // uses on an expense form, even though 4 < 6 overall.
+    expect(rank(POOL, 'out').indexOf('Gehalt')).toBeGreaterThan(
+      rank(POOL, 'out').indexOf('Mobilität'),
+    );
+  });
+
+  it('breaks ties on the type count by overall use', () => {
+    const a = { name: 'A', c: use(9, 0, 0) };
+    const b = { name: 'B', c: use(1, 0, 0) };
+    // Neither has been used with `in`, so familiarity decides rather than
+    // the alphabet.
+    expect(rank([b, a], 'in')).toEqual(['A', 'B']);
+  });
+
+  it('ranks by the total when no type is given', () => {
+    // The bulk action over a mixed selection has no single type to rank by.
+    expect(rank(POOL, null)).toEqual(['Lebensmittel', 'Mobilität', 'Gehalt', 'Unbenutzt']);
+  });
+
+  it('leaves fully-tied entries to the caller', () => {
+    expect(_compareUsage(use(3, 1, 2), use(3, 1, 2), 'out')).toBe(0);
+  });
+
+  it('treats missing or malformed counts as zero', () => {
+    expect(_compareUsage(undefined, use(1, 0, 1), 'out')).toBeGreaterThan(0);
+    expect(_compareUsage({}, {}, 'in')).toBe(0);
+    expect(_compareUsage({ all: 'x', out: null }, use(0, 0, 0), 'out')).toBe(0);
+  });
+});
+
+describe('_defaultBookingDate', () => {
+  // Month is zero-based, like appState.view.month and the Date API.
+  const AUG_25 = new Date(2026, 7, 25);
+
+  it('is today while the ledger shows the current month', () => {
+    expect(_defaultBookingDate(2026, 7, AUG_25)).toBe('2026-08-25');
+  });
+
+  it('stays inside the month being browsed', () => {
+    // The regression: this used to return today, so a booking added while
+    // browsing June landed in August and vanished from the view that
+    // reported it saved.
+    expect(_defaultBookingDate(2026, 5, AUG_25)).toBe('2026-06-25');
+    expect(_defaultBookingDate(2025, 11, AUG_25)).toBe('2025-12-25');
+  });
+
+  it('works forwards as well as backwards', () => {
+    expect(_defaultBookingDate(2026, 9, AUG_25)).toBe('2026-10-25');
+  });
+
+  it('clamps a day the target month does not have', () => {
+    const jan31 = new Date(2026, 0, 31);
+    expect(_defaultBookingDate(2026, 1, jan31)).toBe('2026-02-28'); // Feb, common year
+    expect(_defaultBookingDate(2024, 1, jan31)).toBe('2024-02-29'); // Feb, leap year
+    expect(_defaultBookingDate(2026, 3, jan31)).toBe('2026-04-30'); // 30-day month
+  });
+
+  it('pads month and day to two digits', () => {
+    expect(_defaultBookingDate(2026, 0, new Date(2026, 0, 5))).toBe('2026-01-05');
   });
 });

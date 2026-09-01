@@ -17,8 +17,10 @@
 // The module.exports guard at the bottom is a no-op in the browser.
 
 const appState = {
-  // Currently displayed period in the transactions view (also seeds the date
-  // of a new booking). currentMonth / currentYear.
+  // Currently displayed period in the transactions view. Also seeds the date
+  // of a new booking (_defaultBookingDate), so adding one while browsing an
+  // earlier month lands it in that month rather than silently in today's.
+  // currentMonth / currentYear.
   view: {
     month: new Date().getMonth(),
     year: new Date().getFullYear(),
@@ -32,9 +34,51 @@ const appState = {
 
   // Draft of the booking form (the in/out toggle and the tags being attached
   // to the next transaction). currentType / currentTags.
+  //
+  // `pristine` is the serialised form state at open — closeModal compares
+  // against it to ask before discarding a draft. Null while no modal is up.
   form: {
     type: 'out',
     tags: [],
+    pristine: null,
+  },
+
+  // Tag chooser under the booking and recurring forms: a search field over
+  // every tag plus a chip row that doubles as the selection, so a tag is
+  // never shown twice. The selections themselves live with their form
+  // (form.tags / recurring.tags); this only holds the view.
+  //
+  // `shown` is the list currently rendered, and it is deliberately frozen
+  // between query changes: toggling a chip recolours it in place instead of
+  // reordering the row under the user's finger mid-tap.
+  // `ranked` is the pool the row cap cuts from, least-used out first; `shown`
+  // is the frozen display order that gets painted (alphabetical, with tags
+  // already on the record grouped in front).
+  tagChooser: {
+    transaction: { query: '', shown: [], ranked: [], overflow: 0 },
+    recurring: { query: '', shown: [], ranked: [], overflow: 0 },
+  },
+
+  // Category chooser — the same idiom as the tag chooser, but single-select
+  // and mandatory, so `selectedId` *is* the form's value: nothing reads a
+  // <select> any more. `shown` is frozen between query and type changes for
+  // the same reason the tag row is.
+  //
+  // Unlike tags the row is capped by measured rows rather than by count: chip
+  // widths follow the category names, so a fixed number packs into anything
+  // from one row to three. That cap is applied to the DOM directly, so nothing
+  // about it is held here.
+  //
+  // `auto` marks a selection the form picked itself (the top-ranked category)
+  // rather than one the user tapped. Switching the type re-picks an automatic
+  // choice — otherwise flipping to income would leave the expense default
+  // selected — but never overrides a deliberate one.
+  catChooser: {
+    transaction: { query: '', shown: [], overflow: 0, selectedId: null, auto: true },
+    recurring: { query: '', shown: [], overflow: 0, selectedId: null, auto: true },
+    goal: { query: '', shown: [], overflow: 0, selectedId: null, auto: true },
+    budget: { query: '', shown: [], overflow: 0, selectedId: null, auto: true },
+    bulk: { query: '', shown: [], overflow: 0, selectedId: null, auto: true },
   },
 
   // Reports view. `current` is the active report id (restored from
@@ -129,17 +173,23 @@ const appState = {
   boot: {
     failed: false,
     retrying: false,
+    // The success twin of `failed`: false while the post-login load chain in
+    // _loadBootData is still running, true once every slice has landed and the
+    // default panel is up. The auth overlay comes down before that chain
+    // finishes, so "the app is visible" and "the app is loaded" are not the
+    // same moment — anything that must not race the remaining loads waits on
+    // this rather than on the first render.
+    ready: false,
   },
 
-  // Tag picker (shared between the transaction form, the recurring form and
-  // the bulk add/remove actions). pickerSelection / _tagPickerContext /
-  // currentRecurringTags. `bulkRemovePool` holds the union of tags present on
-  // the currently selected transactions, so the "remove tag" picker offers
-  // only tags that can actually be removed.
+  // Tag picker modal — only the ledger's bulk add/remove actions still use
+  // it; the two forms pick tags inline through tagChooser above.
+  // `bulkRemovePool` holds the union of tags present on the currently
+  // selected transactions, so the "remove tag" picker offers only tags that
+  // can actually be removed.
   tagPicker: {
     selection: [],
-    context: 'transaction',
-    recurringTags: [],
+    context: 'bulkAdd',
     bulkRemovePool: [],
   },
 
@@ -159,6 +209,9 @@ const appState = {
     id: null,
     color: '#9e9b96',
     icon: null,
+    // Set when the category modal was opened from a chooser's "add" chip:
+    // the chooser context to hand the new category back to on save.
+    returnTo: null,
   },
 
   // Goals list + edit modal draft. goals / editingGoalId / editingGoalColor.
@@ -166,6 +219,10 @@ const appState = {
     list: [],
     editingId: null,
     editingColor: '#9e9b96',
+    // Last name the new-goal form filled in from the selected category.
+    // Comparing against it is how _syncGoalNameToCategory tells an
+    // untouched suggestion from something the user typed.
+    autoName: '',
   },
 
   // Budgets list + edit modal draft (per-category spending caps).
@@ -180,9 +237,15 @@ const appState = {
     rules: [],
     editingId: null,
     validity: 'unlimited',
+    tags: [],
   },
 
   // Tag rename modal draft. editingTagName.
+  // Filter text of the drawer's two management lists. Not persisted: the
+  // field only exists while the panel is open (see applyDrawerFilter).
+  drawer: {
+    filter: { cats: '', tags: '' },
+  },
   tagEdit: {
     name: null,
   },

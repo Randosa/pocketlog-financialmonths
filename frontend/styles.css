@@ -72,6 +72,10 @@
         /* Glass borders & highlights — g300-based */
         --hairline: rgba(209, 207, 197, 0.9);
         --hairline-soft: rgba(209, 207, 197, 0.55);
+        /* Chip outlines only. A chip is bounded by nothing but its line,
+           so it needs more than the hairline that edges a filled card —
+           same warm family, roughly twice the contrast (2.1:1). */
+        --chip-outline: #adaba2;
         --edge-dark: rgba(20, 20, 19, 0.07);
 
         /* Shadows */
@@ -193,7 +197,7 @@
 
         /* Spacing scale — Zahl im Namen = px-Wert. 4-px-Raster plus 10 / 14
        als gängige iOS-Zwischenstufen und 2 / 56 für Sonderfälle
-       (.tag-pill negative, .empty-state Padding). Halbschritte wurden
+       (Badge-Versatz, .empty-state Padding). Halbschritte wurden
        in Phase 3 auf das Raster zusammengezogen. */
         --space-2: 2px;
         --space-4: 4px;
@@ -257,6 +261,7 @@
 
         --hairline: rgba(209, 207, 197, 0.14);
         --hairline-soft: rgba(209, 207, 197, 0.07);
+        --chip-outline: #45433a;
         --edge-dark: rgba(0, 0, 0, 0.4);
 
         --shadow-soft:
@@ -1117,6 +1122,29 @@
          the opaque card and exposes a sliver of the red delete action
          behind it during inertial scroll. */
 
+      /* The keyboard path to the row's primary action.
+         The card carries tap, swipe and long-press on one pointer handler, and
+         a tag chip inside it is already a control — so this is a *sibling* of
+         that chip rather than its ancestor (a button must not contain
+         interactive content), and it is transparent to the pointer, which
+         leaves every gesture exactly as it was. Keyboard activation does not
+         hit-test, so Enter and Space still reach it.
+         Inset by the ring's own width: .transaction clips its overflow, so a
+         ring drawn on the card's edge would be cut away entirely. */
+      .tx-open {
+        position: absolute;
+        inset: 3px;
+        pointer-events: none;
+        background: none;
+        border: 0;
+        padding: 0;
+        border-radius: inherit;
+      }
+      .tx-open:focus-visible {
+        outline: none;
+        box-shadow: var(--focus-ring);
+      }
+
       .t-icon {
         width: var(--icon-list-md);
         height: var(--icon-list-md);
@@ -1189,6 +1217,20 @@
         font-weight: 500;
         color: var(--text);
         line-height: 1.4;
+        cursor: pointer;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      /* No :active feedback — same call as .transaction and .cat-view-row:
+         touch-start fires it during inertial scroll and the chip flashes.
+         Keyboard activation keeps its feedback via is-key-active. */
+      .t-tag.is-key-active {
+        opacity: 0.55;
+        transition: opacity var(--dur-fast) ease;
+      }
+      .t-tag:focus-visible {
+        outline: none;
+        box-shadow: var(--focus-ring);
       }
       .t-amount {
         font-family: var(--font-display);
@@ -1648,10 +1690,15 @@
         transition: background var(--dur-fast);
         -webkit-tap-highlight-color: transparent;
       }
-      .drawer-close-btn:hover,
       .drawer-close-btn:active {
         background: var(--surface-tint);
         color: var(--text);
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .drawer-close-btn:hover {
+          background: var(--surface-tint);
+          color: var(--text);
+        }
       }
       .drawer-close-btn:focus-visible {
         outline: none;
@@ -1822,10 +1869,15 @@
         outline: none;
         box-shadow: var(--focus-ring);
       }
-      .drawer-back-btn:hover,
       .drawer-back-btn:active {
         background: var(--surface-tint);
         color: var(--text);
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .drawer-back-btn:hover {
+          background: var(--surface-tint);
+          color: var(--text);
+        }
       }
       .drawer-sub-title {
         font-family: var(--font-body);
@@ -1933,10 +1985,15 @@
         outline: none;
         box-shadow: var(--focus-ring);
       }
-      .modal-cancel-btn:hover,
       .modal-cancel-btn:active {
         background: var(--surface-tint);
         color: var(--text);
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .modal-cancel-btn:hover {
+          background: var(--surface-tint);
+          color: var(--text);
+        }
       }
 
       .modal-body {
@@ -2016,6 +2073,18 @@
 
       .form-group {
         margin-bottom: var(--space-16);
+      }
+      /* Inline validation message under a field (label -> input -> error),
+         the pattern .auth-error already uses in the auth views. Hidden until
+         a submit marks the field; cleared again on the next edit. */
+      .field-error {
+        margin: var(--space-4) 0 0;
+        font-size: var(--fs-footnote);
+        color: var(--red);
+        line-height: 1.4;
+      }
+      .form-group :is(input, select).is-invalid {
+        border-color: var(--red);
       }
       .form-group label {
         display: block;
@@ -2135,88 +2204,49 @@
         flex: 1;
       }
 
-      .tags-input-wrap {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--space-8);
-        align-items: center;
-        padding: var(--space-8) var(--space-10);
-        background: var(--bg-canvas);
-        border: var(--border-hairline);
-        border-radius: var(--r-md);
-        min-height: 48px;
-      }
-      .tag-pill {
-        background: var(--bg-grouped);
-        border: var(--border-hairline);
-        border-radius: var(--r-pill);
-        padding: var(--space-4) var(--space-12);
-        font-size: var(--fs-micro);
-        font-weight: 500;
-        display: flex;
-        align-items: center;
-        gap: var(--space-4);
-      }
-      .tag-pill button {
-        background: none;
-        border: none;
-        cursor: pointer;
-        color: var(--text3);
-        font-size: var(--fs-footnote);
-        padding: var(--space-8);
-        margin: calc(-1 * var(--space-8));
-        line-height: 1;
-      }
-      .tag-pill button:focus-visible {
-        outline: none;
-        box-shadow: var(--focus-ring);
-      }
-
-      .tag-add-btn {
-        margin-left: auto;
-        width: var(--btn-chrome-size);
-        height: var(--btn-chrome-size);
-        border-radius: 50%;
-        border: var(--border-hairline);
-        background: var(--bg-grouped);
-        color: var(--text2);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        flex-shrink: 0;
-        transition: transform var(--dur-base) var(--ease-spring);
-        -webkit-tap-highlight-color: transparent;
-      }
-      .tag-add-btn:active {
-        transform: scale(0.92);
-      }
-      .tag-add-btn:focus-visible {
-        outline: none;
-        box-shadow:
-          inset 0 0.5px 0 var(--hairline),
-          var(--focus-ring);
-      }
-
-      .tag-create-row {
-        display: flex;
-        gap: var(--space-8);
-        align-items: center;
-      }
-      .tag-create-row input {
-        flex: 1;
-        min-width: 0;
-      }
-
-      .tag-picker-search {
-        height: var(--btn-fab-size);
+      /* Both sit in a column of text fields, so they take the field look
+         rather than .search-wrap's floating capsule: that one belongs to the
+         bottom bar, where it actually floats over the ledger. In a modal the
+         blur has nothing to blur, the elevation reads as a stray shadow among
+         flat fields, and 45%-white over the modal ground is visibly greyer
+         than the canvas fill beside it. */
+      .tag-picker-search,
+      .tag-chooser-search,
+      .cat-chooser-search,
+      .drawer-search {
+        /* Same box as .form-group input — see the min-height there. */
+        height: calc(2 * var(--space-14) + 1.2 * var(--fs-body));
         padding: 0 var(--space-16);
         margin-bottom: var(--space-12);
+        background: var(--bg-canvas);
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+        border-radius: var(--r-md);
       }
-      /* The picker's filter input lives inside .form-group, whose generic
-         input styling would otherwise paint a second pill inside the
-         search bar. Strip it so the search-wrap reads as a single field. */
-      .form-group .tag-picker-search .search-input {
+      /* Focus keeps the .search-wrap ring; only the resting elevation goes. */
+      :is(.tag-picker-search, .tag-chooser-search, .cat-chooser-search, .drawer-search):not(
+          :focus-within
+        ) {
+        box-shadow: none;
+      }
+      .tag-chooser-search,
+      .cat-chooser-search {
+        margin-bottom: var(--space-10);
+      }
+      /* Count / limit / no-match line under a chip row — the two form
+         choosers and the bulk picker share it. */
+      .tag-chooser-hint,
+      .cat-chooser-hint {
+        margin: var(--space-8) 0 0;
+        font-size: var(--fs-footnote);
+        color: var(--text3);
+        line-height: 1.4;
+      }
+      /* These filter inputs live inside .form-group, whose generic input
+         styling would otherwise paint a second pill inside the search bar.
+         Strip it so the search-wrap reads as a single field. */
+      .form-group :is(.tag-picker-search, .tag-chooser-search, .cat-chooser-search)
+        .search-input {
         background: none;
         border: none;
         box-shadow: none;
@@ -2232,15 +2262,28 @@
         align-content: flex-start;
         align-items: flex-start;
       }
+      /* Text comes from data-empty (i18n) — CSS must not carry copy.
+         Renders nothing when the attribute is absent, which is how the bulk
+         picker opts out: it reports "no match" through .tag-chooser-hint,
+         which can tell an empty search from an untouched one. The trend
+         picker reuses the grid and still sets the attribute. */
       .tag-picker-chips:empty::after {
-        content: 'Keine Tags gefunden.';
+        content: attr(data-empty);
         color: var(--text3);
         font-size: var(--fs-caption);
         padding: var(--space-8) var(--space-4);
       }
-      .tag-picker-chip {
+      /* One tag chip, two placements: the picker grid and the suggestion
+         row under the booking form's tag field. Same object, so the resting
+         look is shared here — only the selected/added state below differs.
+         Hairline width like every other edge in the app; the legibility comes
+         from --chip-outline instead, because a chip has no fill to fall back
+         on the way a card or field does. */
+      .tag-picker-chip,
+      .tag-suggestion,
+      .cat-suggestion {
         background: transparent;
-        border: var(--border-hairline-strong);
+        border: 0.5px solid var(--chip-outline);
         border-radius: var(--r-pill);
         padding: var(--space-10) var(--space-14);
         font-size: var(--fs-micro);
@@ -2253,11 +2296,6 @@
           color var(--dur-base) var(--ease-spring),
           border-color var(--dur-base) var(--ease-spring);
         min-height: var(--btn-chrome-size);
-      }
-      .tag-picker-chip.selected {
-        background: color-mix(in oklab, var(--accent) 18%, transparent);
-        border-color: var(--accent);
-        color: var(--text);
       }
       .tag-picker-chip:focus-visible {
         outline: none;
@@ -2369,10 +2407,17 @@
         text-align: left;
         transition: background var(--dur-base) var(--ease-soft);
       }
-      .icon-trigger:hover,
       .icon-trigger:focus-visible {
         background: var(--bg-grouped);
         outline: none;
+      }
+      .icon-trigger:active {
+        background: var(--bg-grouped);
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .icon-trigger:hover {
+          background: var(--bg-grouped);
+        }
       }
       .icon-trigger:focus-visible {
         box-shadow: var(--focus-ring);
@@ -2447,37 +2492,67 @@
         height: 58%;
       }
 
-      .tag-suggestions {
+      .tag-suggestions,
+      .cat-suggestions {
         display: flex;
         flex-wrap: wrap;
         gap: var(--space-8);
         margin-top: var(--space-10);
       }
-      .tag-suggestions:empty {
+      .tag-suggestions:empty,
+      .cat-suggestions:empty {
         display: none;
       }
-      .tag-suggestion {
-        background: transparent;
-        border: 1px dashed var(--text3);
-        border-radius: var(--r-pill);
-        padding: var(--space-10) var(--space-14);
-        font-size: var(--fs-micro);
-        font-weight: 500;
-        color: var(--text2);
-        cursor: pointer;
-        font-family: inherit;
-        transition: all var(--dur-base) var(--ease-spring);
-      }
-      .tag-suggestion:focus-visible {
+      /* Resting look shared with .tag-picker-chip further up. */
+      .tag-suggestion:focus-visible,
+      .cat-suggestion:focus-visible {
         outline: none;
         box-shadow: var(--focus-ring);
       }
-      .tag-suggestion:hover,
-      .tag-suggestion:active {
-        background: var(--bg-canvas);
-        border-style: solid;
-        border-color: var(--hairline-soft);
+      /* Label only — no icon square. Category names run long, and on a phone
+         the glyph plus its gap cost more width than an extra chip is worth.
+         The icon still speaks for the category on the ledger rows, in the
+         reports and in the category list, where there is room for it. */
+      .cat-suggestion {
+        display: inline-flex;
+        align-items: center;
+      }
+      /* Attached to the form / staged in the picker / active in the trend
+         report: one state, one look. The accent reads at a glance where a
+         dimmed outline did not, and the chip stays interactive — with no pills
+         anywhere, tapping it again is the only way to take the tag off. The
+         trend chip joins here rather than restating the same color-mix; it
+         keeps its bolder label below. */
+      .tag-picker-chip.selected,
+      .tag-suggestion.is-added,
+      .cat-suggestion.is-chosen,
+      .trend-chip.is-selected {
+        background: color-mix(in oklab, var(--accent) 18%, transparent);
+        border-color: var(--accent);
         color: var(--text);
+      }
+      /* Offers to make the typed text a tag. Dashed and in the accent so it
+         cannot be mistaken for one of the existing chips beside it. */
+      .tag-create,
+      .cat-create {
+        border-style: dashed;
+        border-color: var(--accent);
+        color: var(--accent);
+        font-weight: 600;
+      }
+      /* Only the not-yet-added chip reacts — an added one already carries the
+         accent and must not have it overwritten. */
+      .tag-suggestion:not(.is-added):active,
+      .cat-suggestion:not(.is-chosen):active {
+        border-color: var(--text3);
+        color: var(--text);
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .tag-suggestion:not(.is-added):hover,
+        .cat-suggestion:not(.is-chosen):hover {
+          border-color: var(--text3);
+          color: var(--text);
+        }
       }
 
       .submit-btn {
@@ -2864,11 +2939,17 @@
         outline: none;
         box-shadow: var(--focus-ring);
       }
-      .range-stepper > button:not(.range-stepper-label):hover,
       .range-stepper > button:not(.range-stepper-label):active {
         background: var(--bg-grouped);
         color: var(--text);
         transform: scale(0.94);
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .range-stepper > button:not(.range-stepper-label):hover {
+          background: var(--bg-grouped);
+          color: var(--text);
+          transform: scale(0.94);
+        }
       }
       /* The label is a direct-child button but not a round arrow — a two-class
          selector outranks the chrome rule above. Auto-width pill; only month/
@@ -3116,6 +3197,12 @@
         flex-direction: column;
         gap: var(--space-12);
       }
+      /* Tinted pill on purpose: it sits inside a white card directly under the
+         segmented control and borrows its shape and fill, so a canvas-filled
+         field would both clash with that control and vanish against the card.
+         What it does drop is the floating chrome the base .search-wrap carries
+         for the bottom bar — inside a card there is nothing to float over and
+         nothing to blur, and backdrop-filter costs a compositing layer. */
       .trend-picker-open .search-wrap {
         background: var(--surface-tint);
         border-radius: var(--r-pill);
@@ -3124,6 +3211,11 @@
         gap: var(--space-8);
         padding: 0 var(--space-12);
         min-height: var(--btn-chrome-size);
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+      }
+      .trend-picker-open .search-wrap:not(:focus-within) {
+        box-shadow: none;
       }
       .trend-picker-open .search-wrap .ui-icon {
         width: 16px;
@@ -3146,7 +3238,14 @@
         align-items: center;
         gap: var(--space-8);
         background: transparent;
-        border: var(--border-hairline-strong);
+        /* --chip-outline, not a hairline: a chip is bounded by nothing but its
+           line, so it needs the stronger tone every other tag chip uses.
+           Measured against the card behind it, this lifts 1.49:1 -> 2.30:1 in
+           light. Dark gains far less (1.40 -> 1.67): a low-alpha light hairline
+           over a dark ground still composites well clear of it, so the raw
+           0.14 alpha overstates how faint it looked. Raising the dark token
+           would change every chip in the app, not just these. */
+        border: 0.5px solid var(--chip-outline);
         border-radius: var(--r-pill);
         padding: var(--space-8) var(--space-12);
         font-size: var(--fs-footnote);
@@ -3162,9 +3261,8 @@
         border-radius: var(--r-pill);
         flex-shrink: 0;
       }
+      /* Background and border come from the shared selected-chip rule. */
       .trend-chip.is-selected {
-        background: color-mix(in oklab, var(--accent) 18%, transparent);
-        border-color: var(--accent);
         font-weight: 600;
       }
       .trend-chip:focus-visible {
@@ -3401,9 +3499,19 @@
       .drawer-section > .save-btn:first-child {
         margin-top: 0;
       }
-      /* Spacing between top button and chip list below */
-      .drawer-section .save-btn + .drawer-chip-list {
+      /* Spacing between the top button and whatever follows it. The list is no
+         longer the button's adjacent sibling — the filter field sits between
+         them — so it needs its own case for when that field is hidden, where
+         display:none takes the field's margin-bottom with it. The first
+         selector still covers a section that has no filter field at all. */
+      .drawer-section .save-btn + .drawer-chip-list,
+      .drawer-section .save-btn + .drawer-search,
+      .drawer-section .drawer-search[hidden] + .drawer-chip-list {
         margin-top: var(--space-12);
+      }
+      /* [hidden] has to beat .search-wrap's display:flex. */
+      .drawer-search[hidden] {
+        display: none;
       }
       /* Categories: drawer-nav card style */
       #catList.drawer-chip-list {
@@ -3457,6 +3565,8 @@
       }
       #tagList .cat-pill-edit {
         width: 100%;
+        display: flex;
+        align-items: center;
         justify-content: flex-start;
         min-height: 50px;
         border-radius: 0 !important;
@@ -3707,8 +3817,13 @@
         cursor: pointer;
         border-radius: var(--r-sm);
       }
-      .recurring-skip-list button:hover {
+      .recurring-skip-list button:active {
         color: var(--accent);
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .recurring-skip-list button:hover {
+          color: var(--accent);
+        }
       }
       .recurring-skip-list button:focus-visible {
         outline: none;
@@ -3851,9 +3966,13 @@
         cursor: pointer;
         transition: background var(--dur-base) var(--ease-soft);
       }
-      .confirm-cancel:hover,
       .confirm-cancel:active {
         background: var(--surface-tint);
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .confirm-cancel:hover {
+          background: var(--surface-tint);
+        }
       }
       .confirm-cancel:focus-visible {
         outline: none;
@@ -4330,10 +4449,15 @@
         cursor: pointer;
         border-radius: var(--r-sm);
       }
-      .icon-btn:hover,
       .icon-btn:active {
         color: var(--text);
         background: var(--surface-tint);
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .icon-btn:hover {
+          color: var(--text);
+          background: var(--surface-tint);
+        }
       }
       .icon-btn:focus-visible {
         outline: none;

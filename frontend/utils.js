@@ -133,6 +133,48 @@ function _recurringNextOccurrence(frequency, interval, after, weekday, dom) {
   return { y: ny, m: nm, d: _recurringClampDay(ny, nm, day) };
 }
 
+// --- Booking defaults -------------------------------------------------------
+
+// The date a new booking starts on.
+//
+// Today, as long as the ledger is showing the current month. Browsing an
+// earlier month is how you add something you forgot, and defaulting to today
+// there put the booking in a month you were not looking at: the app reported
+// "saved" and nothing appeared. So the day is placed inside the month on
+// screen instead, clamped because the 31st does not exist in June.
+//
+// `viewMonth` is zero-based, matching appState.view.month and the Date API.
+function _defaultBookingDate(viewYear, viewMonth, today) {
+  return _iso(viewYear, viewMonth, Math.min(today.getDate(), _daysInMonth(viewYear, viewMonth)));
+}
+
+// --- Suggestion ranking -----------------------------------------------------
+
+// Ordering shared by the tag and the category chooser. Both show only their
+// top few chips and reach the rest through search, so this comparator decides
+// whether the everyday case is a single tap.
+//
+// The count for the form's *current type* leads: booking an expense should not
+// be offered the category (or tag) that only ever rides along with income. The
+// overall count breaks ties, so two entries unused with this type still sort by
+// how familiar they are rather than arbitrarily. Whatever is left the caller
+// settles by name.
+//
+// `counts` is {all, in, out} as the API reports it; `type` is 'in' | 'out', or
+// null to rank by the total alone (the bulk action over a mixed selection).
+// Returns a comparator result — negative when `a` should come first.
+function _compareUsage(a, b, type) {
+  const pick = (c) => {
+    const all = Number(c && c.all) || 0;
+    if (type === 'in') return [Number(c && c.in) || 0, all];
+    if (type === 'out') return [Number(c && c.out) || 0, all];
+    return [all, all];
+  };
+  const [aTyped, aAll] = pick(a);
+  const [bTyped, bAll] = pick(b);
+  return bTyped - aTyped || bAll - aAll;
+}
+
 // --- Search / drill-down filtering -----------------------------------------
 
 // Filter a transaction pool by an active drill-down (category or tag) or a
@@ -308,14 +350,39 @@ function _importReport(result, cap = 10) {
 
 // Node/Vitest only — the browser classic-script load skips this (module is
 // undefined there) and relies on the global function declarations above.
+// Mirrors of the server-side tag limits (backend/app/schemas.py). The tag
+// chooser enforces them before sending, so a slip surfaces as a hint in the
+// form rather than an unreadable 422.
+const MAX_TAG_LENGTH = 64;
+const MAX_TAGS_PER_TX = 20;
+
+// Clean a freshly typed tag name the way schemas._normalise_tags would:
+// control characters out, trimmed, capped. Returns '' for anything that would
+// not survive the round trip, so callers can simply skip it.
+function _normaliseNewTag(raw) {
+  // Filtered by code point rather than a regex: a control-character class
+  // reads badly and trips eslint's no-control-regex for no gain.
+  const DEL = String.fromCharCode(127);
+  return [...String(raw ?? '')]
+    .filter((ch) => ch >= ' ' && ch !== DEL)
+    .join('')
+    .trim()
+    .slice(0, MAX_TAG_LENGTH);
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     _iso,
     _daysInMonth,
+    MAX_TAG_LENGTH,
+    MAX_TAGS_PER_TX,
+    _normaliseNewTag,
     _escAttr,
     _escText,
     _parseAmountWith,
     _formatAmountWith,
+    _compareUsage,
+    _defaultBookingDate,
     _filterTransactions,
     _passwordErrorKey,
     _importReport,

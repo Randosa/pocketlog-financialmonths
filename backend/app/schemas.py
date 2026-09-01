@@ -122,6 +122,14 @@ class CategoryUpdate(CategoryBase):
 
 class CategoryOut(CategoryBase):
     id: int
+    # Recent usage over the last 90 days, split by transaction type. The
+    # frontend's category chooser shows only the top two rows of chips and
+    # ranks them by these, so booking an expense surfaces expense categories.
+    # Defaulted because create/update return a plain ORM row that carries no
+    # counts — only the list endpoint computes them.
+    count: int = 0
+    count_in: int = 0
+    count_out: int = 0
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -228,7 +236,11 @@ class TagRename(BaseModel):
 
 class TagOut(BaseModel):
     name: str
+    # `count` stays the 90-day total; the split lets the tag chooser rank
+    # against the form's current type, the same way the category chooser does.
     count: int
+    count_in: int = 0
+    count_out: int = 0
 
 
 # -------- Transactions --------
