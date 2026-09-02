@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import auth, crud, errors, models, rate_limit, recurring, schemas
+from .. import auth, crud, errors, financial_period, models, rate_limit, recurring, schemas
 from ..deps import (
     CSRF_HEADER_NAME,
     DB,
@@ -246,6 +246,7 @@ def login(payload: schemas.LoginRequest, request: Request, response: Response, d
             force_change_password=user.force_change_password,
             csrf_token=session.csrf_token,
             recurring_materialized_count=materialized,
+            financial_month_start_day=financial_period.MONTH_START_DAY,
         )
     }
 
@@ -320,6 +321,7 @@ def auth_me(request: Request, response: Response, db: DB, user: RawCurrentUser):
         force_change_password=user.force_change_password,
         csrf_token=csrf,
         recurring_materialized_count=materialized,
+        financial_month_start_day=financial_period.MONTH_START_DAY,
     )
 
 
@@ -424,3 +426,4 @@ def change_password(
         revoked,
     )
     return Response(status_code=204)
+

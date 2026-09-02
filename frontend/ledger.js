@@ -9,14 +9,30 @@ function normalizeTx(t) {
   return { ...t, amount: Number(t.amount), tags: (t.tags || []).slice() };
 }
 
-// Keep a normalized transaction pool's rows for the currently displayed month.
+function _viewFinancialPeriod() {
+  return _financialPeriodForAnchor(
+    appState.view.year,
+    appState.view.month,
+    appState.financialMonthStartDay,
+  );
+}
+
+function _financialPeriodLabel(period) {
+  const format = (iso) => {
+    const [y, m, d] = iso.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString(_locale(), {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+  return `${format(period.from)} – ${format(period.to)}`;
+}
+
+// Keep a normalized transaction pool's rows for the displayed financial month.
 function _txInViewMonth(list) {
-  const y = appState.view.year;
-  const m = appState.view.month + 1;
-  return list.filter((t) => {
-    const parts = String(t.date).split('-');
-    return Number(parts[0]) === y && Number(parts[1]) === m;
-  });
+  const period = _viewFinancialPeriod();
+  return list.filter((t) => t.date >= period.from && t.date <= period.to);
 }
 
 // Offline fallback for the month view: the per-month request missed the cache
@@ -52,12 +68,13 @@ function _warmFullHistoryCache() {
 }
 
 async function loadAndRender() {
+  const period = _viewFinancialPeriod();
   document.getElementById('monthLabelText').textContent =
-    `${appState.calendar.months[appState.view.month]} ${appState.view.year}`;
+    _financialPeriodLabel(period);
   try {
     const raw = await api(
       'GET',
-      `/transactions?year=${appState.view.year}&month=${appState.view.month + 1}`,
+      `/transactions?from=${period.from}&to=${period.to}`,
     );
     appState.ledger.transactions = raw.map(normalizeTx);
     // Warm the full history in the background so other months stay browsable
@@ -83,7 +100,7 @@ async function loadAndRender() {
 
 function renderAll() {
   document.getElementById('monthLabelText').textContent =
-    `${appState.calendar.months[appState.view.month]} ${appState.view.year}`;
+    _financialPeriodLabel(_viewFinancialPeriod());
   const out = appState.ledger.transactions
     .filter((t) => t.type === 'out')
     .reduce((a, t) => a + t.amount, 0);
@@ -773,3 +790,4 @@ function openBulkRemoveTags() {
   appState.tagPicker.bulkRemovePool = union;
   openTagPickerFor('bulkRemove');
 }
+

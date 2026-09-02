@@ -314,8 +314,8 @@ function _applyTxLocally(method, editId, body) {
   const tx = { id: -Date.now(), source_rule_id: null, ...fields };
   // The month list is scoped to the displayed month, so only add it there when
   // its date falls in that month; otherwise it would render under a stray date.
-  const [y, m] = body.date.split('-').map(Number);
-  if (y === appState.view.year && m === appState.view.month + 1) {
+  const anchor = _financialAnchorForDate(body.date, appState.financialMonthStartDay);
+  if (anchor.y === appState.view.year && anchor.m === appState.view.month) {
     appState.ledger.transactions.push(tx);
   }
   if (appState.ledger.all) appState.ledger.all.push(tx);
@@ -347,3 +347,4 @@ function mergeIntoAvailableTags(tags, type) {
     renderTagList();
   }
 }
+

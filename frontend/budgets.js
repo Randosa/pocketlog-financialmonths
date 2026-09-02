@@ -19,13 +19,15 @@ async function loadBudgets() {
 
 // _budgetPeriod() / _budgetUsage() live in reportsData.js (loaded earlier).
 
-// Human label for the active period, e.g. "Juni 2026" / "Q2 2026" / "2026".
+// Human label for the active financial period.
 function _budgetPeriodLabel(frequency, year, month) {
-  if (frequency === 'yearly') return String(year);
-  if (frequency === 'quarterly') return `Q${Math.floor(month / 3) + 1} ${year}`;
-  const names = appState.calendar.months;
-  const name = names && names[month] ? names[month] : String(month + 1);
-  return `${name} ${year}`;
+  const period = _budgetPeriod(
+    frequency,
+    year,
+    month,
+    appState.financialMonthStartDay,
+  );
+  return _financialPeriodLabel(period);
 }
 
 async function renderBudgetsView() {
@@ -40,11 +42,15 @@ async function renderBudgetsView() {
   // span needed (yearly budgets span the whole year) once, then slice per
   // budget via _budgetUsage's date filter.
   const { year, month } = appState.view;
-  const yearStart = _iso(year, 0, 1);
-  const yearEnd = _iso(year, 11, 31);
+  const financialYear = _budgetPeriod(
+    'yearly',
+    year,
+    month,
+    appState.financialMonthStartDay,
+  );
   let pool = [];
   try {
-    pool = await loadRangeTxs(yearStart, yearEnd);
+    pool = await loadRangeTxs(financialYear.from, financialYear.to);
   } catch (e) {
     pool = [];
   }
@@ -63,7 +69,12 @@ async function renderBudgetsView() {
         icon: 'wallet',
         color: '#9e9b96',
       };
-      const period = _budgetPeriod(b.frequency, year, month);
+      const period = _budgetPeriod(
+        b.frequency,
+        year,
+        month,
+        appState.financialMonthStartDay,
+      );
       const u = _budgetUsage(b, pool, period.from, period.to);
       const pctLabel = Math.round(u.rawPct) + '%';
       const overClass = u.over ? ' over' : '';
@@ -232,3 +243,4 @@ async function deleteBudgetEdit() {
     toast(tr('tx.deleteFailed') + e.message, 'error');
   }
 }
+

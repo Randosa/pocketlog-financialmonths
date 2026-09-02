@@ -18,6 +18,13 @@ const {
 } = reportsData;
 
 describe('_bucketKey', () => {
+  it('puts dates before the start day in the preceding financial month', () => {
+    expect(_bucketKey('2026-09-14', 'month', 16)).toBe('2026-08');
+    expect(_bucketKey('2026-09-15', 'month', 16)).toBe('2026-08');
+    expect(_bucketKey('2026-09-16', 'month', 16)).toBe('2026-09');
+    expect(_bucketKey('2027-01-14', 'month', 16)).toBe('2026-12');
+  });
+
   it('keys by month, quarter and year', () => {
     expect(_bucketKey('2026-04-15', 'month')).toBe('2026-04');
     expect(_bucketKey('2026-04-15', 'quarter')).toBe('2026-Q2');
@@ -31,6 +38,13 @@ describe('_bucketKey', () => {
 });
 
 describe('_bucketAxis', () => {
+  it('walks financial months across the December boundary', () => {
+    expect(_bucketAxis('2026-12-16', '2027-02-15', 'month', 16)).toEqual([
+      '2026-12',
+      '2027-01',
+    ]);
+  });
+
   it('walks months across a year boundary, inclusive', () => {
     expect(_bucketAxis('2025-11-01', '2026-02-20', 'month')).toEqual([
       '2025-11',
@@ -178,3 +192,4 @@ describe('_trendStats', () => {
     expect(stats.yoy).toBeNull();
   });
 });
+

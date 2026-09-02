@@ -6,11 +6,11 @@ recurring rules and CSV import.
 
 from datetime import date as date_type
 
-from sqlalchemy import and_, extract, select
+from sqlalchemy import and_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from .. import exceptions, models, schemas
+from .. import exceptions, financial_period, models, schemas
 from ..db_retry import run_with_retry
 from ._shared import _get_owned
 from .categories import _owned_category_exists
@@ -27,18 +27,14 @@ _TX_TAGS_LOAD = selectinload(models.Transaction.tags)
 def list_transactions(
     db: Session, user_id: int, year: int, month: int | None = None
 ) -> list[models.Transaction]:
-    q = select(models.Transaction).where(
-        and_(
-            models.Transaction.user_id == user_id,
-            extract("year", models.Transaction.date) == year,
-        )
-    )
-    if month is not None:
-        q = q.where(extract("month", models.Transaction.date) == month)
-    q = q.options(_TX_TAGS_LOAD).order_by(
-        models.Transaction.date.desc(), models.Transaction.id.desc()
-    )
-    return list(db.scalars(q))
+    # ``year``/``month`` are financial-period anchors, not transaction-date
+    # components. Dates in the database remain untouched; this only chooses
+    # the inclusive range returned to callers.
+    if month is None:
+        start, end = financial_period.financial_year(year)
+    else:
+        start, end = financial_period.period_for_anchor(year, month)
+    return list_transactions_by_range(db, user_id, start, end)
 
 
 def list_all_transactions(db: Session, user_id: int) -> list[models.Transaction]:
@@ -241,3 +237,4 @@ def bulk_delete(db: Session, user_id: int, ids: list[int]) -> tuple[int, int]:
         db.delete(tx)
     db.commit()
     return len(txs), len(txs)
+

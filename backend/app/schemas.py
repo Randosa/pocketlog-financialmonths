@@ -900,6 +900,9 @@ class UserMe(BaseModel):
     # when > 0. Defaults to 0 so callers that don't pass it (login
     # response) don't trip the schema.
     recurring_materialized_count: int = 0
+    # Deployment-wide period configuration. The operator controls it through
+    # FINANCIAL_MONTH_START_DAY so every user shares the same boundaries.
+    financial_month_start_day: int = Field(default=1, ge=1, le=31)
 
 
 class SessionOut(BaseModel):
@@ -970,3 +973,4 @@ class ReloadEventsIn(BaseModel):
     # Matches the frontend's localStorage buffer cap (core.js
     # RELOAD_EVENTS_MAX) — one boot never delivers more than this.
     events: list[ReloadEventIn] = Field(min_length=1, max_length=20)
+

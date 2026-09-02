@@ -215,8 +215,22 @@ async function submitForcePassword() {
   }
 }
 
+function _applyFinancialMonthStartDay(startDay) {
+  appState.financialMonthStartDay = _financialStartDay(startDay);
+  const anchor = _financialCurrentAnchor(new Date(), appState.financialMonthStartDay);
+  appState.view.year = anchor.y;
+  appState.view.month = anchor.m;
+  appState.reports.range.anchor = {
+    y: anchor.y,
+    m: anchor.m,
+    q: Math.floor(anchor.m / 3),
+  };
+  applyRange({ skipRender: true });
+}
+
 async function _afterAuthSuccess(me) {
   appState.admin.me = me;
+  _applyFinancialMonthStartDay(me.financial_month_start_day);
   document.body.classList.toggle('is-admin', !!me.is_admin);
   const usernameLabel = document.getElementById('accountUsername');
   if (usernameLabel) usernameLabel.textContent = tr('auth.loggedInAs', { name: me.username });
@@ -470,3 +484,4 @@ async function init() {
   await _afterAuthSuccess(me);
 }
 init();
+

@@ -17,6 +17,10 @@
 // The module.exports guard at the bottom is a no-op in the browser.
 
 const appState = {
+  // Deployment-wide financial-month setting delivered with /auth/me. A value
+  // of 1 preserves PocketLog's original calendar-month behaviour.
+  financialMonthStartDay: 1,
+
   // Currently displayed period in the transactions view. Also seeds the date
   // of a new booking (_defaultBookingDate), so adding one while browsing an
   // earlier month lands it in that month rather than silently in today's.
@@ -273,3 +277,4 @@ const appState = {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { appState };
 }
+

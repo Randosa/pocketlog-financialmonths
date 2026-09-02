@@ -13,12 +13,13 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
+import utils from '../utils.js';
 
 const BOOKING_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', 'booking.js');
 
 function loadApplyTxLocally(appState) {
   const src = readFileSync(BOOKING_PATH, 'utf8') + '\n;globalThis.__exports = { _applyTxLocally };';
-  const sandbox = { appState };
+  const sandbox = { appState, _financialAnchorForDate: utils._financialAnchorForDate };
   vm.createContext(sandbox);
   vm.runInContext(src, sandbox);
   return sandbox.__exports._applyTxLocally;
@@ -174,3 +175,4 @@ describe('_applyTxLocally', () => {
     });
   });
 });
+

@@ -178,6 +178,17 @@ describe('_goalProgress', () => {
 });
 
 describe('_budgetPeriod', () => {
+  it('uses an inclusive custom financial month when configured', () => {
+    expect(_budgetPeriod('monthly', 2026, 7, 16)).toEqual({
+      from: '2026-08-16',
+      to: '2026-09-15',
+    });
+    expect(_budgetPeriod('monthly', 2026, 8, 16)).toEqual({
+      from: '2026-09-16',
+      to: '2026-10-15',
+    });
+  });
+
   it('monthly returns the single calendar month', () => {
     expect(_budgetPeriod('monthly', 2026, 5)).toEqual({
       from: '2026-06-01',
@@ -265,3 +276,4 @@ describe('_budgetUsage', () => {
     expect(u.spentCents).toBe(30); // 0.1 + 0.2 === 30 cents exactly
   });
 });
+

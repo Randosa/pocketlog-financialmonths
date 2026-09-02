@@ -20,6 +20,87 @@ function _daysInMonth(y, m) {
   return new Date(y, m + 1, 0).getDate();
 }
 
+// --- Financial-month arithmetic --------------------------------------------
+// Transaction dates never change. These helpers only map a real date to its
+// containing financial period. ``startDay`` defaults to 1 so callers and old
+// imports preserve the original calendar-month behaviour until configured.
+
+function _financialStartDay(startDay) {
+  const value = Number(startDay);
+  return Number.isInteger(value) && value >= 1 && value <= 31 ? value : 1;
+}
+
+function _financialMonthStart(y, m, startDay = 1) {
+  return _iso(y, m, Math.min(_financialStartDay(startDay), _daysInMonth(y, m)));
+}
+
+function _financialShiftAnchor(y, m, delta) {
+  const index = y * 12 + m + delta;
+  return { y: Math.floor(index / 12), m: ((index % 12) + 12) % 12 };
+}
+
+function _financialPeriodForAnchor(y, m, startDay = 1) {
+  const next = _financialShiftAnchor(y, m, 1);
+  const from = _financialMonthStart(y, m, startDay);
+  const nextStart = _financialMonthStart(next.y, next.m, startDay);
+  const end = new Date(`${nextStart}T00:00:00`);
+  end.setDate(end.getDate() - 1);
+  return {
+    from,
+    to: _iso(end.getFullYear(), end.getMonth(), end.getDate()),
+    anchor: { y, m },
+  };
+}
+
+function _financialAnchorForDate(iso, startDay = 1) {
+  const y = Number(iso.slice(0, 4));
+  const m = Number(iso.slice(5, 7)) - 1;
+  // Some pure trend helpers accept a YYYY-MM key; treat that as day one so
+  // their legacy calendar-mode behaviour remains well-defined.
+  const d = Number(iso.slice(8, 10)) || 1;
+  const monthStart = Math.min(_financialStartDay(startDay), _daysInMonth(y, m));
+  return d < monthStart ? _financialShiftAnchor(y, m, -1) : { y, m };
+}
+
+function _financialPeriodForDate(iso, startDay = 1) {
+  const anchor = _financialAnchorForDate(iso, startDay);
+  return _financialPeriodForAnchor(anchor.y, anchor.m, startDay);
+}
+
+function _financialCurrentAnchor(now = new Date(), startDay = 1) {
+  return _financialAnchorForDate(
+    _iso(now.getFullYear(), now.getMonth(), now.getDate()),
+    startDay,
+  );
+}
+
+function _financialPeriodForFrequency(frequency, y, m, startDay = 1) {
+  if (frequency === 'yearly') {
+    const first = _financialPeriodForAnchor(y, 0, startDay);
+    const last = _financialPeriodForAnchor(y, 11, startDay);
+    return { from: first.from, to: last.to };
+  }
+  if (frequency === 'quarterly') {
+    const firstMonth = Math.floor(m / 3) * 3;
+    const first = _financialPeriodForAnchor(y, firstMonth, startDay);
+    const last = _financialPeriodForAnchor(y, firstMonth + 2, startDay);
+    return { from: first.from, to: last.to };
+  }
+  const period = _financialPeriodForAnchor(y, m, startDay);
+  return { from: period.from, to: period.to };
+}
+
+function _financialIsoDays(fromIso, toIso) {
+  const days = [];
+  const current = new Date(`${fromIso}T00:00:00`);
+  const end = new Date(`${toIso}T00:00:00`);
+  while (current <= end) {
+    days.push(_iso(current.getFullYear(), current.getMonth(), current.getDate()));
+    current.setDate(current.getDate() + 1);
+  }
+  return days;
+}
+
 // Escape a string for use inside a double-quoted HTML attribute.
 function _escAttr(s) {
   return String(s)
@@ -374,6 +455,15 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     _iso,
     _daysInMonth,
+    _financialStartDay,
+    _financialMonthStart,
+    _financialShiftAnchor,
+    _financialPeriodForAnchor,
+    _financialAnchorForDate,
+    _financialPeriodForDate,
+    _financialCurrentAnchor,
+    _financialPeriodForFrequency,
+    _financialIsoDays,
     MAX_TAG_LENGTH,
     MAX_TAGS_PER_TX,
     _normaliseNewTag,
@@ -399,3 +489,4 @@ if (typeof module !== 'undefined' && module.exports) {
     _recurringNextOccurrence,
   };
 }
+

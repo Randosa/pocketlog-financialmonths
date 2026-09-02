@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
+import utils from '../utils.js';
 
 const DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -225,7 +226,11 @@ describe('ledger.js offline month fallback', () => {
         'closeAllSwipes',
         'renderCategoryView',
       ],
-      globals: { document: { addEventListener() {} }, api },
+      globals: {
+        document: { addEventListener() {} },
+        api,
+        _financialPeriodForAnchor: utils._financialPeriodForAnchor,
+      },
       appState,
     });
   }
@@ -273,3 +278,4 @@ describe('ledger.js offline month fallback', () => {
     expect(appState.ledger.fullHistoryWarmedAt).toBeGreaterThan(0);
   });
 });
+

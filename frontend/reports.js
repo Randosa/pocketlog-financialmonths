@@ -28,17 +28,19 @@ function cssColor(name, alpha = 1) {
 
 function computeRange(kind, a) {
   if (kind === 'month') {
-    const last = _daysInMonth(a.y, a.m);
-    return { from: _iso(a.y, a.m, 1), to: _iso(a.y, a.m, last) };
+    const period = _financialPeriodForAnchor(a.y, a.m, appState.financialMonthStartDay);
+    return { from: period.from, to: period.to };
   }
   if (kind === 'quarter') {
-    const startM = a.q * 3;
-    const endM = startM + 2;
-    const last = _daysInMonth(a.y, endM);
-    return { from: _iso(a.y, startM, 1), to: _iso(a.y, endM, last) };
+    return _financialPeriodForFrequency(
+      'quarterly',
+      a.y,
+      a.q * 3,
+      appState.financialMonthStartDay,
+    );
   }
   if (kind === 'year') {
-    return { from: _iso(a.y, 0, 1), to: _iso(a.y, 11, 31) };
+    return _financialPeriodForFrequency('yearly', a.y, 0, appState.financialMonthStartDay);
   }
   // custom: from/to stay as last entered.
   return { from: appState.reports.range.from, to: appState.reports.range.to };
@@ -130,9 +132,8 @@ function setRangeLock(kind) {
 
 function _rangeStepperLabel() {
   const a = appState.reports.range.anchor;
-  if (appState.reports.range.kind === 'month') return `${appState.calendar.months[a.m]} ${a.y}`;
-  if (appState.reports.range.kind === 'quarter') return `Q${a.q + 1} ${a.y}`;
-  if (appState.reports.range.kind === 'year') return `${a.y}`;
+  if (appState.reports.range.kind !== 'custom')
+    return _financialPeriodLabel(computeRange(appState.reports.range.kind, a));
   return '';
 }
 
@@ -227,7 +228,7 @@ function toggleRangePicker(open) {
 function renderRangePicker() {
   const grid = document.getElementById('rangePickerGrid');
   const yearLabel = document.getElementById('rangePickerYearLabel');
-  const today = new Date();
+  const today = _financialCurrentAnchor(new Date(), appState.financialMonthStartDay);
   const a = appState.reports.range.anchor;
   if (appState.reports.range.kind === 'year') {
     // 12-year grid, paged in decade-aligned blocks.
@@ -237,7 +238,7 @@ function renderRangePicker() {
       .map((y) => {
         const cls = ['mp-month'];
         if (y === a.y) cls.push('is-current');
-        if (y === today.getFullYear()) cls.push('is-today');
+        if (y === today.y) cls.push('is-today');
         return `<button type="button" class="${cls.join(' ')}" data-action="pickRangeYear" data-args="[${y}]"${
           y === a.y ? ' aria-current="true"' : ''
         }>${y}</button>`;
@@ -249,7 +250,7 @@ function renderRangePicker() {
     grid.innerHTML = appState.calendar.monthsShort
       .map((name, m) => {
         const isCurrent = m === a.m && year === a.y;
-        const isToday = m === today.getMonth() && year === today.getFullYear();
+        const isToday = m === today.m && year === today.y;
         const cls = ['mp-month'];
         if (isCurrent) cls.push('is-current');
         if (isToday) cls.push('is-today');
@@ -282,11 +283,11 @@ function pickRangeYear(y) {
 }
 
 function rangePickerToday() {
-  const now = new Date();
+  const now = _financialCurrentAnchor(new Date(), appState.financialMonthStartDay);
   const a = appState.reports.range.anchor;
-  a.y = now.getFullYear();
+  a.y = now.y;
   if (appState.reports.range.kind !== 'year') {
-    a.m = now.getMonth();
+    a.m = now.m;
     a.q = Math.floor(a.m / 3);
   }
   toggleRangePicker(false);
@@ -296,7 +297,13 @@ function rangePickerToday() {
 async function _loadYearTxs(year) {
   if (_txCacheByYear.has(year)) return _txCacheByYear.get(year);
   try {
-    const raw = await api('GET', `/transactions?year=${year}`);
+    const period = _financialPeriodForFrequency(
+      'yearly',
+      year,
+      0,
+      appState.financialMonthStartDay,
+    );
+    const raw = await api('GET', `/transactions?from=${period.from}&to=${period.to}`);
     const txs = raw.map(normalizeTx);
     _txCacheByYear.set(year, txs);
     return txs;
@@ -307,13 +314,8 @@ async function _loadYearTxs(year) {
 
 async function loadRangeTxs(from, to) {
   if (!from || !to) return [];
-  const y1 = parseInt(from.slice(0, 4), 10);
-  const y2 = parseInt(to.slice(0, 4), 10);
-  const years = [];
-  for (let y = y1; y <= y2; y++) years.push(y);
-  const pools = await Promise.all(years.map(_loadYearTxs));
-  const all = pools.flat();
-  return all.filter((t) => t.date >= from && t.date <= to);
+  const raw = await api('GET', `/transactions?from=${from}&to=${to}`);
+  return raw.map(normalizeTx);
 }
 
 // ── REPORTS — RENDER DISPATCH ─────────────────────────────────────────────────
@@ -345,9 +347,20 @@ async function renderReport(id = appState.reports.current) {
   body.innerHTML = '';
 
   // Trend uses its own private year range and never touches appState.reports.range.
-  const rangeFrom =
-    id === 'trend' ? `${appState.trend.yearFrom}-01-01` : appState.reports.range.from;
-  const rangeTo = id === 'trend' ? `${appState.trend.yearTo}-12-31` : appState.reports.range.to;
+  const trendFrom = _financialPeriodForFrequency(
+    'yearly',
+    appState.trend.yearFrom,
+    0,
+    appState.financialMonthStartDay,
+  );
+  const trendTo = _financialPeriodForFrequency(
+    'yearly',
+    appState.trend.yearTo,
+    0,
+    appState.financialMonthStartDay,
+  );
+  const rangeFrom = id === 'trend' ? trendFrom.from : appState.reports.range.from;
+  const rangeTo = id === 'trend' ? trendTo.to : appState.reports.range.to;
   const txs = await loadRangeTxs(rangeFrom, rangeTo);
   appState.reports.txPool = txs;
   document.getElementById('reportRangeLabel').textContent = _rangeSubtitle(txs.length);
@@ -477,23 +490,25 @@ function _courseChartScales(c) {
 }
 
 function _renderCourseDaily(body, txs) {
-  const a = appState.reports.range.anchor;
-  const days = _daysInMonth(a.y, a.m);
-  const labels = Array.from({ length: days }, (_, i) => i + 1);
+  const period = appState.reports.range;
+  const days = _financialIsoDays(period.from, period.to);
+  const labels = days.map((iso) => {
+    const [, m, d] = iso.split('-');
+    return `${Number(m)}/${Number(d)}`;
+  });
   const byDay = {};
   txs.forEach((t) => {
-    const d = new Date(t.date).getDate();
-    if (!byDay[d]) byDay[d] = { out: 0, in: 0 };
-    byDay[d][t.type] += t.amount;
+    if (!byDay[t.date]) byDay[t.date] = { out: 0, in: 0 };
+    byDay[t.date][t.type] += t.amount;
   });
-  const outData = labels.map((d) => byDay[d]?.out || 0);
-  const inData = labels.map((d) => byDay[d]?.in || 0);
+  const outData = days.map((d) => byDay[d]?.out || 0);
+  const inData = days.map((d) => byDay[d]?.in || 0);
   const totals = _sumByType(txs);
 
   body.innerHTML = `
           <div class="report-section">
             <div class="report-canvas-wrap"><canvas id="courseChart" role="img" aria-labelledby="reportTitle" aria-describedby="courseChartSummary"></canvas></div>
-            <p id="courseChartSummary" class="visually-hidden" aria-live="polite">${tr('reports.monthSummary', { month: appState.calendar.months[a.m], year: a.y, income: fmtCurrency(totals.in), expenses: fmtCurrency(totals.out) })}</p>
+            <p id="courseChartSummary" class="visually-hidden" aria-live="polite">${tr('reports.courseSummary', { income: fmtCurrency(totals.in), expenses: fmtCurrency(totals.out) })}</p>
           </div>
           ${_courseKpisMarkup(totals)}
         `;
@@ -529,11 +544,16 @@ function _renderCourseDaily(body, txs) {
 }
 
 async function _renderCourseMonthly(body, txs) {
-  const bucketKeys = _bucketAxis(appState.reports.range.from, appState.reports.range.to, 'month');
+  const bucketKeys = _bucketAxis(
+    appState.reports.range.from,
+    appState.reports.range.to,
+    'month',
+    appState.financialMonthStartDay,
+  );
   const labels = bucketKeys.map((k) => _bucketLabel(k, 'month'));
   const slots = new Map(bucketKeys.map((k) => [k, { out: 0, in: 0 }]));
   for (const t of txs) {
-    const key = t.date.slice(0, 7);
+    const key = _bucketKey(t.date, 'month', appState.financialMonthStartDay);
     if (slots.has(key)) slots.get(key)[t.type] += t.amount;
   }
   const monthly = bucketKeys.map((k) => slots.get(k));
@@ -549,7 +569,9 @@ async function _renderCourseMonthly(body, txs) {
     if (prevTxs.length) {
       prevOut = Array.from({ length: 12 }, () => 0);
       for (const t of prevTxs) {
-        if (t.type === 'out') prevOut[new Date(t.date).getMonth()] += t.amount;
+        if (t.type !== 'out') continue;
+        const anchor = _financialAnchorForDate(t.date, appState.financialMonthStartDay);
+        prevOut[anchor.m] += t.amount;
       }
     }
   }
@@ -836,7 +858,7 @@ function _persistTrendRange() {
 async function _findEarliestTxDate() {
   if (appState.trend.earliestTxDate) return appState.trend.earliestTxDate;
   const today = new Date();
-  let year = today.getFullYear();
+  let year = _financialCurrentAnchor(today, appState.financialMonthStartDay).y;
   let earliest = null;
   let consecutiveEmpty = 0;
   const floor = year - 20;
@@ -867,8 +889,11 @@ async function _ensureTrendDefaultRange() {
   const earliest = await _findEarliestTxDate();
   if (appState.trend.yearFrom && appState.trend.yearTo) return;
   const today = new Date();
-  appState.trend.yearFrom = parseInt(earliest.slice(0, 4), 10);
-  appState.trend.yearTo = today.getFullYear();
+  appState.trend.yearFrom = _financialAnchorForDate(
+    earliest,
+    appState.financialMonthStartDay,
+  ).y;
+  appState.trend.yearTo = _financialCurrentAnchor(today, appState.financialMonthStartDay).y;
   _persistTrendRange();
 }
 
@@ -916,13 +941,13 @@ function _pickDefaultTrendEntity(txs, kind) {
   return null;
 }
 
-function _trendSeries(txs, entityId, granularity, bucketKeys) {
+function _trendSeries(txs, entityId, granularity, bucketKeys, startDay = 1) {
   const entity = _trendEntityFromId(entityId);
   if (!entity) return null;
   const sums = new Map(bucketKeys.map((k) => [k, 0]));
   for (const t of txs) {
     if (!_trendMatchesEntity(t, entity)) continue;
-    const key = _bucketKey(t.date, granularity);
+    const key = _bucketKey(t.date, granularity, startDay);
     if (sums.has(key)) sums.set(key, sums.get(key) + _signedTrendAmount(t));
   }
   return {
@@ -934,8 +959,7 @@ function _trendSeries(txs, entityId, granularity, bucketKeys) {
 }
 
 function _trendPeakLabel(key) {
-  const [y, m] = key.split('-');
-  return `${appState.calendar.months[parseInt(m, 10) - 1]} ${y}`;
+  return _bucketLabel(key, 'month');
 }
 
 function _trendChipMarkup(id, name, color, selected) {
@@ -1064,9 +1088,9 @@ function filterTrendChips(value) {
 }
 
 async function setTrendYear(field, value) {
-  const today = new Date().getFullYear();
+  const today = _financialCurrentAnchor(new Date(), appState.financialMonthStartDay).y;
   const minYear = appState.trend.earliestTxDate
-    ? parseInt(appState.trend.earliestTxDate.slice(0, 4), 10)
+    ? _financialAnchorForDate(appState.trend.earliestTxDate, appState.financialMonthStartDay).y
     : today - 20;
   value = Math.round(Math.max(minYear, Math.min(today, value)));
   if (field === 'from') {
@@ -1099,9 +1123,9 @@ async function renderReportTrend(body, txs) {
     }
   }
 
-  const today = new Date().getFullYear();
+  const today = _financialCurrentAnchor(new Date(), appState.financialMonthStartDay).y;
   const minYear = appState.trend.earliestTxDate
-    ? parseInt(appState.trend.earliestTxDate.slice(0, 4), 10)
+    ? _financialAnchorForDate(appState.trend.earliestTxDate, appState.financialMonthStartDay).y
     : today - 20;
   const yearOptions = (selectedYear) => {
     let html = '';
@@ -1182,14 +1206,40 @@ async function renderReportTrend(body, txs) {
   const granularity = 'month';
   const todayDate = new Date();
   const todayIso = _iso(todayDate.getFullYear(), todayDate.getMonth(), todayDate.getDate());
-  const trendFromIso = `${appState.trend.yearFrom}-01-01`;
-  const trendToIso = `${appState.trend.yearTo}-12-31`;
+  const trendFromIso = _financialPeriodForFrequency(
+    'yearly',
+    appState.trend.yearFrom,
+    0,
+    appState.financialMonthStartDay,
+  ).from;
+  const trendToIso = _financialPeriodForFrequency(
+    'yearly',
+    appState.trend.yearTo,
+    0,
+    appState.financialMonthStartDay,
+  ).to;
   const effectiveTo = trendToIso > todayIso ? todayIso : trendToIso;
-  const bucketKeys = _bucketAxis(trendFromIso, effectiveTo, granularity);
+  const bucketKeys = _bucketAxis(
+    trendFromIso,
+    effectiveTo,
+    granularity,
+    appState.financialMonthStartDay,
+  );
   const bucketLabels = bucketKeys.map((k) => _bucketLabel(k, granularity));
-  const series = _trendSeries(txs, selected.id, granularity, bucketKeys);
-  const monthlyMap = _monthlyTotals(txs, selected);
-  const stats = _trendStats(monthlyMap, trendFromIso, effectiveTo);
+  const series = _trendSeries(
+    txs,
+    selected.id,
+    granularity,
+    bucketKeys,
+    appState.financialMonthStartDay,
+  );
+  const monthlyMap = _monthlyTotals(txs, selected, appState.financialMonthStartDay);
+  const stats = _trendStats(
+    monthlyMap,
+    trendFromIso,
+    effectiveTo,
+    appState.financialMonthStartDay,
+  );
 
   body.innerHTML = `
           ${yearPickerMarkup}
@@ -1286,14 +1336,23 @@ async function renderReportForecast(body, rangeTxs) {
   const todayM = today.getMonth();
   const msDay = 86400000;
 
-  // History: the last 12 complete months before the current month.
+  // History: the last 12 complete financial months before the current one.
   // Anchor deliberately "today", not the target month — that way the
   // forecast is based on the most recent real data even when the user
   // looks into the future.
-  const histEndDate = new Date(todayY, todayM, 0);
-  const histStartDate = new Date(todayY, todayM - 12, 1);
-  const histStartIso = _iso(histStartDate.getFullYear(), histStartDate.getMonth(), 1);
-  const histEndIso = _iso(histEndDate.getFullYear(), histEndDate.getMonth(), histEndDate.getDate());
+  const currentAnchor = _financialCurrentAnchor(today, appState.financialMonthStartDay);
+  const previousAnchor = _financialShiftAnchor(currentAnchor.y, currentAnchor.m, -1);
+  const firstAnchor = _financialShiftAnchor(currentAnchor.y, currentAnchor.m, -12);
+  const histStartIso = _financialPeriodForAnchor(
+    firstAnchor.y,
+    firstAnchor.m,
+    appState.financialMonthStartDay,
+  ).from;
+  const histEndIso = _financialPeriodForAnchor(
+    previousAnchor.y,
+    previousAnchor.m,
+    appState.financialMonthStartDay,
+  ).to;
   const histTxs = await loadRangeTxs(histStartIso, histEndIso);
   const histOut = histTxs.filter((t) => t.type === 'out');
 
@@ -1302,7 +1361,10 @@ async function renderReportForecast(body, rangeTxs) {
     return;
   }
 
-  const histDays = Math.round((histEndDate - histStartDate) / msDay) + 1;
+  const histDays =
+    Math.round(
+      (new Date(`${histEndIso}T00:00:00`) - new Date(`${histStartIso}T00:00:00`)) / msDay,
+    ) + 1;
   const dailyAvg = histOut.reduce((s, t) => s + t.amount, 0) / histDays;
 
   // Selected period from the time picker.
@@ -1434,3 +1496,4 @@ function renderReportTop(body, txs) {
   }
   body.innerHTML = `<div class="report-section">${top.map(_txRowMarkup).join('')}</div>`;
 }
+

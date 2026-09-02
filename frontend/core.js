@@ -1085,11 +1085,11 @@ function renderMonthPicker() {
   const year = appState.view.pickerYear;
   document.getElementById('mpYear').textContent = String(year);
   const grid = document.getElementById('mpGrid');
-  const today = new Date();
+  const today = _financialCurrentAnchor(new Date(), appState.financialMonthStartDay);
   grid.innerHTML = appState.calendar.monthsShort
     .map((name, m) => {
       const isSelected = m === appState.view.month && year === appState.view.year;
-      const isToday = m === today.getMonth() && year === today.getFullYear();
+      const isToday = m === today.m && year === today.y;
       const cls = ['mp-month'];
       if (isSelected) cls.push('is-current');
       if (isToday) cls.push('is-today');
@@ -1113,9 +1113,10 @@ function pickMonth(m) {
 }
 
 function goToCurrentMonth() {
-  const now = new Date();
-  appState.view.month = now.getMonth();
-  appState.view.year = now.getFullYear();
+  const anchor = _financialCurrentAnchor(new Date(), appState.financialMonthStartDay);
+  appState.view.month = anchor.m;
+  appState.view.year = anchor.y;
   toggleMonthPicker(false);
   loadAndRender();
 }
+

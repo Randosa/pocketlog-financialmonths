@@ -7,6 +7,33 @@
 // unit-test in isolation (frontend/unit/reportsData.test.js). The
 // module.exports guard at the bottom is a no-op in the browser.
 
+// The browser receives these helpers from utils.js, which is loaded first.
+// Unit tests import this CommonJS-style file directly, so load the same pure
+// helpers there as well instead of giving tests a different implementation.
+const _financialHelpers =
+  typeof module !== 'undefined' && module.exports ? require('./utils.js') : null;
+
+function _periodForFinancialAnchor(...args) {
+  return _financialHelpers
+    ? _financialHelpers._financialPeriodForAnchor(...args)
+    : _financialPeriodForAnchor(...args);
+}
+function _anchorForFinancialDate(...args) {
+  return _financialHelpers
+    ? _financialHelpers._financialAnchorForDate(...args)
+    : _financialAnchorForDate(...args);
+}
+function _periodForFinancialFrequency(...args) {
+  return _financialHelpers
+    ? _financialHelpers._financialPeriodForFrequency(...args)
+    : _financialPeriodForFrequency(...args);
+}
+function _shiftFinancialAnchor(...args) {
+  return _financialHelpers
+    ? _financialHelpers._financialShiftAnchor(...args)
+    : _financialShiftAnchor(...args);
+}
+
 // Sum a list of transactions into { out, in } totals (numbers).
 function _sumByType(txs) {
   let out = 0,
@@ -105,30 +132,11 @@ function _goalProgress(goal, pool) {
   };
 }
 
-// Calendar-aligned period bounds for a budget frequency, given a reference
-// year + zero-based month. Returns ISO date strings { from, to } (inclusive)
-// matching the GET /api/transactions?from=&to= contract. No rollover: each
-// period is a clean calendar slice (month / quarter / year). Pure — used by
-// _budgetUsage and the render path.
-function _budgetPeriod(frequency, year, month) {
-  let startMonth, endMonth;
-  if (frequency === 'yearly') {
-    startMonth = 0;
-    endMonth = 11;
-  } else if (frequency === 'quarterly') {
-    startMonth = Math.floor(month / 3) * 3;
-    endMonth = startMonth + 2;
-  } else {
-    // monthly (default)
-    startMonth = month;
-    endMonth = month;
-  }
-  const pad = (n) => String(n).padStart(2, '0');
-  const from = `${year}-${pad(startMonth + 1)}-01`;
-  // Last day of endMonth: day 0 of the following month.
-  const last = new Date(year, endMonth + 1, 0).getDate();
-  const to = `${year}-${pad(endMonth + 1)}-${pad(last)}`;
-  return { from, to };
+// Financial-period bounds for a budget frequency, given a reference year +
+// zero-based financial-month anchor. Dates remain real transaction dates;
+// only the inclusive reporting range changes.
+function _budgetPeriod(frequency, year, month, startDay = 1) {
+  return _periodForFinancialFrequency(frequency, year, month, startDay);
 }
 
 // Derived budget consumption over a pool of transactions for one period.
@@ -166,70 +174,58 @@ function _budgetUsage(budget, pool, periodFrom, periodTo) {
 // impure helpers that read app globals (_trendEntityFromId, _bucketLabel,
 // _pickDefaultTrendEntity) stay in app.js and call these as globals.
 
-// Number of calendar months spanned by [fromIso, toIso] inclusive.
-function _monthSpan(fromIso, toIso) {
-  const fy = parseInt(fromIso.slice(0, 4), 10);
-  const fm = parseInt(fromIso.slice(5, 7), 10);
-  const ty = parseInt(toIso.slice(0, 4), 10);
-  const tm = parseInt(toIso.slice(5, 7), 10);
-  return (ty - fy) * 12 + (tm - fm) + 1;
+// Number of financial months spanned by [fromIso, toIso] inclusive.
+function _monthSpan(fromIso, toIso, startDay = 1) {
+  const from = _anchorForFinancialDate(fromIso, startDay);
+  const to = _anchorForFinancialDate(toIso, startDay);
+  return (to.y - from.y) * 12 + (to.m - from.m) + 1;
 }
 
 // Pick the chart granularity from the span length: months under two years,
 // quarters up to five, years beyond.
-function _autoGranularity(fromIso, toIso) {
-  const months = _monthSpan(fromIso, toIso);
+function _autoGranularity(fromIso, toIso, startDay = 1) {
+  const months = _monthSpan(fromIso, toIso, startDay);
   if (months < 24) return 'month';
   if (months <= 60) return 'quarter';
   return 'year';
 }
 
-// Calendar bucket key for a date at the given granularity: "2026" (year),
-// "2026-Q2" (quarter) or "2026-04" (month).
-function _bucketKey(iso, granularity) {
-  const y = iso.slice(0, 4);
-  const m = parseInt(iso.slice(5, 7), 10);
-  if (granularity === 'year') return y;
-  if (granularity === 'quarter') return `${y}-Q${Math.floor((m - 1) / 3) + 1}`;
-  return `${y}-${String(m).padStart(2, '0')}`;
+// Financial bucket key for a date: the key identifies the month in which the
+// financial period starts ("2026-08" for 2026-09-02 when the start day is 16).
+function _bucketKey(iso, granularity, startDay = 1) {
+  const anchor = _anchorForFinancialDate(iso, startDay);
+  if (granularity === 'year') return String(anchor.y);
+  if (granularity === 'quarter')
+    return `${anchor.y}-Q${Math.floor(anchor.m / 3) + 1}`;
+  return `${anchor.y}-${String(anchor.m + 1).padStart(2, '0')}`;
 }
 
 // Ordered list of bucket keys spanning [fromIso, toIso] inclusive at the
 // given granularity — the chart's x-axis. Walks the calendar so empty
 // buckets in the middle are still represented.
-function _bucketAxis(fromIso, toIso, granularity) {
-  const fy = parseInt(fromIso.slice(0, 4), 10);
-  const fm = parseInt(fromIso.slice(5, 7), 10);
-  const ty = parseInt(toIso.slice(0, 4), 10);
-  const tm = parseInt(toIso.slice(5, 7), 10);
+function _bucketAxis(fromIso, toIso, granularity, startDay = 1) {
+  const from = _anchorForFinancialDate(fromIso, startDay);
+  const to = _anchorForFinancialDate(toIso, startDay);
   const keys = [];
   if (granularity === 'year') {
-    for (let y = fy; y <= ty; y++) keys.push(String(y));
+    for (let y = from.y; y <= to.y; y++) keys.push(String(y));
     return keys;
   }
   if (granularity === 'quarter') {
-    let y = fy;
-    let q = Math.floor((fm - 1) / 3);
-    const endQ = Math.floor((tm - 1) / 3);
-    while (y < ty || (y === ty && q <= endQ)) {
-      keys.push(`${y}-Q${q + 1}`);
-      q++;
-      if (q > 3) {
-        q = 0;
-        y++;
-      }
+    let current = { ...from };
+    let previous = null;
+    while (current.y < to.y || (current.y === to.y && current.m <= to.m)) {
+      const key = `${current.y}-Q${Math.floor(current.m / 3) + 1}`;
+      if (key !== previous) keys.push(key);
+      previous = key;
+      current = _shiftFinancialAnchor(current.y, current.m, 1);
     }
     return keys;
   }
-  let y = fy;
-  let m = fm;
-  while (y < ty || (y === ty && m <= tm)) {
-    keys.push(`${y}-${String(m).padStart(2, '0')}`);
-    m++;
-    if (m > 12) {
-      m = 1;
-      y++;
-    }
+  let current = { ...from };
+  while (current.y < to.y || (current.y === to.y && current.m <= to.m)) {
+    keys.push(`${current.y}-${String(current.m + 1).padStart(2, '0')}`);
+    current = _shiftFinancialAnchor(current.y, current.m, 1);
   }
   return keys;
 }
@@ -280,11 +276,11 @@ function _signedTrendAmount(t) {
 
 // Sum the entity's net flow into a per-calendar-month map (YYYY-MM → amount),
 // the input to _trendStats.
-function _monthlyTotals(txs, entity) {
+function _monthlyTotals(txs, entity, startDay = 1) {
   const sums = new Map();
   for (const t of txs) {
     if (!_trendMatchesEntity(t, entity)) continue;
-    const key = t.date.slice(0, 7);
+    const key = _bucketKey(t.date, 'month', startDay);
     sums.set(key, (sums.get(key) || 0) + _signedTrendAmount(t));
   }
   return sums;
@@ -292,8 +288,8 @@ function _monthlyTotals(txs, entity) {
 
 // Mean / peak / year-over-year stats over a monthly map for the [fromIso,
 // toIso] span. Returns null for an empty span.
-function _trendStats(monthlyMap, fromIso, toIso) {
-  const months = _bucketAxis(fromIso, toIso, 'month');
+function _trendStats(monthlyMap, fromIso, toIso, startDay = 1) {
+  const months = _bucketAxis(fromIso, toIso, 'month', startDay);
   if (!months.length) return null;
   let total = 0;
   let peak = null;
@@ -353,3 +349,4 @@ if (typeof module !== 'undefined' && module.exports) {
     _trendStats,
   };
 }
+

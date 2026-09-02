@@ -52,7 +52,10 @@ COPY backend/docker-entrypoint.sh /docker-entrypoint.sh
 # of `python -m app.cli <command>`. Drops to PUID:PGID itself (docker exec
 # enters as root, bypassing the entrypoint's gosu).
 COPY backend/pocketlog-cli.sh /usr/local/bin/pocketlog
-RUN chmod +x /docker-entrypoint.sh /usr/local/bin/pocketlog
+# Checkouts on Windows can contain CRLF shell scripts; strip only line-ending
+# carriage returns so Linux can execute their shebangs reliably.
+RUN sed -i 's/\r$//' /docker-entrypoint.sh /usr/local/bin/pocketlog \
+ && chmod +x /docker-entrypoint.sh /usr/local/bin/pocketlog
 
 EXPOSE 8000
 
@@ -61,3 +64,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+
